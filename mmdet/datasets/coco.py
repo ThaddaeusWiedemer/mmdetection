@@ -408,7 +408,7 @@ class CocoDataset(CustomDataset):
         min_reached = np.nanmin(lamr_samples)
         np.nan_to_num(lamr_samples, copy=False, nan=min_reached)
         lamr = np.mean(lamr_samples)
-        print('LAMR = ', lamr)
+        print('LAMR =', lamr)
         return lamr, np.stack((fppiThrs, miss_rate, confidence), axis=1)
 
     def results2json(self, results, outfile_prefix):
