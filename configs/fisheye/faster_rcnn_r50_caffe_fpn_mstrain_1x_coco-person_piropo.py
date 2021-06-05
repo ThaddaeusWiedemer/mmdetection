@@ -98,6 +98,5 @@ runner = dict(type='EpochBasedRunner', max_epochs=12)
 # resume_from = None
 # workflow = [('train', 1)]
 
-# consider using 3x trained model instead
 load_from = 'mmdetection/checkpoints/faster_rcnn_r50_fpn_1x_coco-person_20201216_175929-d022e227.pth'
 work_dir = 'work_dirs/PIROPO'

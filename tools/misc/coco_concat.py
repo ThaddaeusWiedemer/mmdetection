@@ -80,8 +80,8 @@ def concat_sets(sets: List, out_path: str, out_size=None):
     print('total annotations:', len(annotations))
     categories = c.loadCats(c.getCatIds())
     result = {'categories': categories, 'images': images, 'annotations': annotations}
-    # with open(out_path, 'w') as f:
-    #     json.dump(result, f)
+    with open(out_path, 'w') as f:
+        json.dump(result, f)
 
 # def random_split(s, size, out_path):
 #     raise NotImplementedError
