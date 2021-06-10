@@ -317,8 +317,6 @@ class CocoDataset(CustomDataset):
         mr          = -np.ones((F,K,A,M))
         fppi        = -np.ones((K,A,M))
         scores      = -np.ones((F,K,A,M))
-        # confThrs = np.linspace(0, 1, num=C) # detection confidence thresholds
-        # fppiThrs = np.logspace(1e-4, 10, num=F) # FPPI thresholds
         # get inds to evaluate
         k_list = [n for n, k in enumerate(p.catIds)]
         m_list = [m for n, m in enumerate(p.maxDets)]

@@ -83,23 +83,6 @@ def concat_sets(sets: List, out_path: str, out_size=None):
     with open(out_path, 'w') as f:
         json.dump(result, f)
 
-# def random_split(s, size, out_path):
-#     raise NotImplementedError
-#     if isinstance(s, tuple):
-#         json_file = s[0]
-#         image_path = s[1]
-#     else:
-#         json_file = s
-#         image_path = None
-#     c = coco.COCO(json_file)
-#     categories = c.loadCats(c.getCatIds())
-#     images = c.loadImgs(c.getImgIds())
-#     annotations = c.loadAnns(c.getAnnIds())
-#     # TODO randomly select subset
-#     result = {'categories': categories, 'images': images, 'annotations': annotations}
-#     with open(out_path, 'w') as f:
-#         json.dump(result, f)
-
 def id_string(n: int) -> str:
     out = ''
     while n >= 0:
@@ -111,28 +94,8 @@ def random_splits(sets: List, out_path: str, out_size: int, num: int):
     for n in range(num):
         concat_sets(sets, out_path + '_' + str(out_size) + id_string(n) + '.json', out_size)
 
-# paths = [
-        # ('MW_18Mar/Test/MW-18Mar-1/annotations.json', 'MW_18Mar/Test/MW-18Mar-1/'),
-        # ('MW_18Mar/Test/MW-18Mar-4/annotations.json', 'MW_18Mar/Test/MW-18Mar-4/'),
-        # ('MW_18Mar/Test/MW-18Mar-5/annotations.json', 'MW_18Mar/Test/MW-18Mar-5/'),
-        # ('MW_18Mar/Test/MW-18Mar-6/annotations.json', 'MW_18Mar/Test/MW-18Mar-6/'),
-        # ('MW_18Mar/Test/MW-18Mar-9/annotations.json', 'MW_18Mar/Test/MW-18Mar-9/'),
-        # ('MW_18Mar/Test/MW-18Mar-11/annotations.json', 'MW_18Mar/Test/MW-18Mar-11/'),
-        # ('MW_18Mar/Test/MW-18Mar-15/annotations.json', 'MW_18Mar/Test/MW-18Mar-15/'),
-        # ('MW_18Mar/Test/MW-18Mar-16/annotations.json', 'MW_18Mar/Test/MW-18Mar-16/'),
-        # ('MW_18Mar/Test/MW-18Mar-20/annotations.json', 'MW_18Mar/Test/MW-18Mar-20/'),
-        # ('MW_18Mar/Test/MW-18Mar-28/annotations.json', 'MW_18Mar/Test/MW-18Mar-28/'),
-        # ('MW_18Mar/Test/MW-18Mar-29/annotations.json', 'MW_18Mar/Test/MW-18Mar-29/'),
-        # ('MW_18Mar/Test/MW-18Mar-30/annotations.json', 'MW_18Mar/Test/MW-18Mar-30/'),
-        # ('PIROPO/Room_A/omni_1A/omni1A_test2/annotations.json', 'PIROPO/Room_A/omni_1A/omni1A_test2/'),
-        # ('PIROPO/Room_A/omni_1A/omni1A_test3/annotations.json', 'PIROPO/Room_A/omni_1A/omni1A_test3/'),
-        # ('PIROPO/Room_A/omni_2A/omni2A_test2/annotations.json', 'PIROPO/Room_A/omni_2A/omni2A_test2/'),
-        # ('PIROPO/Room_A/omni_2A/omni2A_test3/annotations.json', 'PIROPO/Room_A/omni_2A/omni2A_test3/'),
-        # ('PIROPO/Room_A/omni_3A/omni3A_test2/annotations.json', 'PIROPO/Room_A/omni_3A/omni3A_test2/'),
-        # ('PIROPO/Room_A/omni_3A/omni3A_test3/annotations.json', 'PIROPO/Room_A/omni_3A/omni3A_test3/'),
-        # ('PIROPO/Room_B/omni_1B/omni1B_test2/annotations.json', 'PIROPO/Room_B/omni_1B/omni1B_test2/'),
-        # ('PIROPO/Room_B/omni_1B/omni1B_test3/annotations.json', 'PIROPO/Room_B/omni_1B/omni1B_test3/'),
-# ]
+# -----------------------------------
+# PIROPO
 
 # paths = [
 #         ('/data/PIROPO/omni_1A/omni1A_test2/annotations.json', '/data/PIROPO/omni_1A/omni1A_test2/'),
@@ -150,12 +113,12 @@ def random_splits(sets: List, out_path: str, out_size: int, num: int):
 # ]
 # concat_sets(paths, '/data/PIROPO/omni_test3.json')
 
-paths = [
-        ('/data/PIROPO/omni_1A/omni1A_training/annotations.json', '/data/PIROPO/omni_1A/omni1A_training/'),
-        ('/data/PIROPO/omni_1B/omni1B_training/annotations.json', '/data/PIROPO/omni_1B/omni1B_training/'),
-        ('/data/PIROPO/omni_2A/omni2A_training/annotations.json', '/data/PIROPO/omni_2A/omni2A_training/'),
-        ('/data/PIROPO/omni_3A/omni3A_training/annotations.json', '/data/PIROPO/omni_3A/omni3A_training/'),
-]
+# paths = [
+#         ('/data/PIROPO/omni_1A/omni1A_training/annotations.json', '/data/PIROPO/omni_1A/omni1A_training/'),
+#         ('/data/PIROPO/omni_1B/omni1B_training/annotations.json', '/data/PIROPO/omni_1B/omni1B_training/'),
+#         ('/data/PIROPO/omni_2A/omni2A_training/annotations.json', '/data/PIROPO/omni_2A/omni2A_training/'),
+#         ('/data/PIROPO/omni_3A/omni3A_training/annotations.json', '/data/PIROPO/omni_3A/omni3A_training/'),
+# ]
 # concat_sets(paths, '/data/PIROPO/omni_training.json')
 # random_splits(paths, '/data/PIROPO/omni_training', 1, 10)
 # random_splits(paths, '/data/PIROPO/omni_training', 2, 10)
@@ -167,7 +130,7 @@ paths = [
 # random_splits(paths, '/data/PIROPO/omni_training', 200, 10)
 # random_splits(paths, '/data/PIROPO/omni_training', 500, 10)
 # random_splits(paths, '/data/PIROPO/omni_training', 1000, 10)
-random_splits(paths, '/data/PIROPO/omni_training', 2000, 10)
+# random_splits(paths, '/data/PIROPO/omni_training', 2000, 10)
 
 # paths = [
 #         ('/data/PIROPO/omni_1A/omni1A_test2/annotations.json', '/data/PIROPO/omni_1A/omni1A_test2/'),
@@ -196,3 +159,105 @@ random_splits(paths, '/data/PIROPO/omni_training', 2000, 10)
 #         ('/data/PIROPO/omni_3A/omni3A_training/annotations.json', '/data/PIROPO/omni_3A/omni3A_training/'),
 # ]
 # concat_sets(paths, '/data/PIROPO/omni_all.json')
+
+# -----------------------------------
+# MIRROR WORLDS
+
+# paths = [
+#         ('/data/MW-18Mar/MWAll/Test/MW-18Mar-1/img1/annotations.json', '/data/MW-18Mar/MWAll/Test/MW-18Mar-1/img1/'),
+#         ('/data/MW-18Mar/MWAll/Test/MW-18Mar-4/img1/annotations.json', '/data/MW-18Mar/MWAll/Test/MW-18Mar-4/img1/'),
+#         ('/data/MW-18Mar/MWAll/Test/MW-18Mar-5/img1/annotations.json', '/data/MW-18Mar/MWAll/Test/MW-18Mar-5/img1/'),
+#         ('/data/MW-18Mar/MWAll/Test/MW-18Mar-6/img1/annotations.json', '/data/MW-18Mar/MWAll/Test/MW-18Mar-6/img1/'),
+#         ('/data/MW-18Mar/MWAll/Test/MW-18Mar-9/img1/annotations.json', '/data/MW-18Mar/MWAll/Test/MW-18Mar-9/img1/'),
+#         ('/data/MW-18Mar/MWAll/Test/MW-18Mar-11/img1/annotations.json', '/data/MW-18Mar/MWAll/Test/MW-18Mar-11/img1/'),
+#         ('/data/MW-18Mar/MWAll/Test/MW-18Mar-15/img1/annotations.json', '/data/MW-18Mar/MWAll/Test/MW-18Mar-15/img1/'),
+#         ('/data/MW-18Mar/MWAll/Test/MW-18Mar-16/img1/annotations.json', '/data/MW-18Mar/MWAll/Test/MW-18Mar-16/img1/'),
+#         ('/data/MW-18Mar/MWAll/Test/MW-18Mar-20/img1/annotations.json', '/data/MW-18Mar/MWAll/Test/MW-18Mar-20/img1/'),
+#         ('/data/MW-18Mar/MWAll/Test/MW-18Mar-28/img1/annotations.json', '/data/MW-18Mar/MWAll/Test/MW-18Mar-28/img1/'),
+#         ('/data/MW-18Mar/MWAll/Test/MW-18Mar-29/img1/annotations.json', '/data/MW-18Mar/MWAll/Test/MW-18Mar-29/img1/'),
+#         ('/data/MW-18Mar/MWAll/Test/MW-18Mar-30/img1/annotations.json', '/data/MW-18Mar/MWAll/Test/MW-18Mar-30/img1/'),
+# ]
+# concat_sets(paths, '/data/MW-18Mar/test.json')
+
+# paths = [
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-2/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-2/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-3/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-3/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-7/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-7/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-8/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-8/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-10/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-10/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-12/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-12/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-13/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-13/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-14/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-14/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-17/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-17/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-18/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-18/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-19/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-19/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-21/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-21/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-22/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-22/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-23/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-23/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-24/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-24/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-25/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-25/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-26/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-26/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-27/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-27/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-31/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-31/img1/'),
+# ]
+# concat_sets(paths, '/data/MW-18Mar/train.json')
+# random_splits(paths, '/data/MW-18Mar/train', 1, 10)
+# random_splits(paths, '/data/MW-18Mar/train', 2, 10)
+# random_splits(paths, '/data/MW-18Mar/train', 5, 10)
+# random_splits(paths, '/data/MW-18Mar/train', 10, 10)
+# random_splits(paths, '/data/MW-18Mar/train', 20, 10)
+# random_splits(paths, '/data/MW-18Mar/train', 50, 10)
+# random_splits(paths, '/data/MW-18Mar/train', 100, 10)
+# random_splits(paths, '/data/MW-18Mar/train', 200, 10)
+
+# -----------------------------------
+# PIROPO + MIRROR WORLDS
+
+# paths = [
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-2/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-2/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-3/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-3/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-7/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-7/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-8/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-8/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-10/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-10/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-12/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-12/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-13/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-13/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-14/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-14/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-17/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-17/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-18/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-18/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-19/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-19/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-21/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-21/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-22/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-22/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-23/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-23/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-24/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-24/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-25/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-25/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-26/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-26/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-27/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-27/img1/'),
+#         ('/data/MW-18Mar/MWAll/Train/MW-18Mar-31/img1/annotations.json', '/data/MW-18Mar/MWAll/Train/MW-18Mar-31/img1/'),
+#         ('/data/PIROPO/omni_1A/omni1A_training/annotations.json', '/data/PIROPO/omni_1A/omni1A_training/'),
+#         ('/data/PIROPO/omni_1B/omni1B_training/annotations.json', '/data/PIROPO/omni_1B/omni1B_training/'),
+#         ('/data/PIROPO/omni_2A/omni2A_training/annotations.json', '/data/PIROPO/omni_2A/omni2A_training/'),
+#         ('/data/PIROPO/omni_3A/omni3A_training/annotations.json', '/data/PIROPO/omni_3A/omni3A_training/'),
+# ]
+# concat_sets(paths, '/data/piropo_mw_train.json')
+
+# -----------------------------------
+# BOMNI
+
+paths = [
+        ('/data/Bomni-DB/scenario1/top-0/annotations.json', '/data/Bomni-DB/scenario1/top-0/'),
+]
+concat_sets(paths, '/data/Bomni-DB/test.json')
+
+paths = [
+        ('/data/Bomni-DB/scenario1/top-1/annotations.json', '/data/Bomni-DB/scenario1/top-1/'),
+        ('/data/Bomni-DB/scenario1/top-2/annotations.json', '/data/Bomni-DB/scenario1/top-2/'),
+        ('/data/Bomni-DB/scenario1/top-3/annotations.json', '/data/Bomni-DB/scenario1/top-3/'),
+]
+concat_sets(paths, '/data/Bomni-DB/train.json')
+random_splits(paths, '/data/Bomni-DB/train', 1, 10)
+random_splits(paths, '/data/Bomni-DB/train', 2, 10)
+random_splits(paths, '/data/Bomni-DB/train', 5, 10)
+random_splits(paths, '/data/Bomni-DB/train', 10, 10)
+random_splits(paths, '/data/Bomni-DB/train', 20, 10)
+random_splits(paths, '/data/Bomni-DB/train', 50, 10)
+random_splits(paths, '/data/Bomni-DB/train', 100, 10)
