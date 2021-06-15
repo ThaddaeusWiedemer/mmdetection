@@ -5,6 +5,7 @@ from re import S
 import tempfile
 import warnings
 from collections import OrderedDict
+from scipy.stats.mstats import gmean
 
 import mmcv
 import numpy as np
@@ -405,7 +406,10 @@ class CocoDataset(CustomDataset):
         lamr_samples = miss_rate[ilamrThrs]
         min_reached = np.nanmin(lamr_samples)
         np.nan_to_num(lamr_samples, copy=False, nan=min_reached)
-        lamr = np.mean(lamr_samples)
+        # use geometric mean as in original implementation:
+        # https://github.com/pdollar/toolbox/blob/master/detector/acfTest.m#L57
+        # lamr = np.mean(lamr_samples)
+        lamr = gmean(lamr_samples)
         print('LAMR =', lamr)
         return lamr, np.stack((fppiThrs, miss_rate, confidence), axis=1)
 
