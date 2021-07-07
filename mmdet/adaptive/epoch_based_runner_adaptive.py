@@ -11,7 +11,9 @@ import mmcv
 from mmcv.runner.base_runner import BaseRunner
 from mmcv.runner.builder import RUNNERS
 from mmcv.runner.checkpoint import save_checkpoint
-from mmcv.utils import get_host_info
+from mmcv.runner.utils import get_host_info
+
+from itertools import cycle
 
 
 @RUNNERS.register_module()
@@ -21,7 +23,7 @@ class EpochBasedRunnerAdaptive(BaseRunner):
     This runner train models epoch by epoch with a source and target dataset.
     """
 
-    def run_iter(self, data_batch_src, data_batch_tgt, train_mode, **kwargs):
+    def run_iter(self, data_batch, train_mode, **kwargs):
         if self.batch_processor is not None:
             # based on my current understanding, this should not be reached in adaptive training,
             # as model.train_step is available
@@ -30,16 +32,11 @@ class EpochBasedRunnerAdaptive(BaseRunner):
             outputs = self.batch_processor(
                 self.model, data_batch, train_mode=train_mode, **kwargs)
         elif train_mode:
-            # concat src and tgt batches to guarantee correct subsequent scattering to GPUs
-            # TODO implementation here really depends on what type the data batches have
-            # try simple tuple and see what happends
-            print('data batches in `Runner.run_iter()` have type ', type(data_batch_src))
-            data_batch = (data_batch_src, data_batch_tgt)
             outputs = self.model.train_step(data_batch, self.optimizer,
                                             **kwargs)
         else:
             # only use target domain data
-            outputs = self.model.val_step(data_batch_tgt, self.optimizer, **kwargs)
+            outputs = self.model.val_step(data_batch, self.optimizer, **kwargs)
         if not isinstance(outputs, dict):
             raise TypeError('"batch_processor()" or "model.train_step()"'
                             'and "model.val_step()" must return a dict')
@@ -50,17 +47,26 @@ class EpochBasedRunnerAdaptive(BaseRunner):
     def train(self, data_loader_src, data_loader_tgt, **kwargs):
         self.model.train()
         self.mode = 'train'
+        # all instances where ``data_loader`` is used (e.g. to verify the number of classes in the head) only
+        # check ``data_loader``, which is now the loader for the target domain
         self.data_loader_src = data_loader_src
-        self.data_loader_tgt = data_loader_tgt
-        # TODO how to handle this if dataloaders are not of equal size?
-        self._max_iters = self._max_epochs * len(self.data_loader_tgt)
+        self.data_loader = data_loader_tgt
+        self._max_iters = self._max_epochs * len(self.data_loader)
         self.call_hook('before_train_epoch')
         time.sleep(2)  # Prevent possible deadlock during epoch transition
-        # TODO can be implemented better with zip() if unequal dataloader lengths are handled
-        for i, data_batch_tgt in enumerate(self.data_loader_tgt):
+        # we want to exhaust the samples from target domain, even if we need to reuse samples from source domain
+        for i, data_batches in enumerate(zip(cycle(self.data_loader_src), self.data_loader)):
+            data_batch, data_batch_tgt = data_batches
+            # rename target keys
+            data_batch_tgt['img_tgt'] = data_batch_tgt.pop('img')
+            data_batch_tgt['img_metas_tgt'] = data_batch_tgt.pop('img_metas')
+            data_batch_tgt['gt_bboxes_tgt'] = data_batch_tgt.pop('gt_bboxes')
+            data_batch_tgt['gt_labels_tgt'] = data_batch_tgt.pop('gt_labels')
+            # concat src and tgt batches to guarantee correct subsequent scattering to GPUs
+            data_batch.update(data_batch_tgt)
             self._inner_iter = i
             self.call_hook('before_train_iter')
-            self.run_iter(self.data_loader_src[i], data_batch_tgt, train_mode=True, **kwargs)
+            self.run_iter(data_batch, train_mode=True, **kwargs)
             self.call_hook('after_train_iter')
             self._iter += 1
 
@@ -78,7 +84,7 @@ class EpochBasedRunnerAdaptive(BaseRunner):
         for i, data_batch in enumerate(self.data_loader):
             self._inner_iter = i
             self.call_hook('before_val_iter')
-            self.run_iter(data_batch, data_batch, train_mode=False)
+            self.run_iter(data_batch, train_mode=False)
             self.call_hook('after_val_iter')
 
         self.call_hook('after_val_epoch')
@@ -111,7 +117,6 @@ class EpochBasedRunnerAdaptive(BaseRunner):
         for i, flow in enumerate(workflow):
             mode, epochs = flow
             if mode == 'train':
-                # TODO how to handle this if data loaders are not equal size? can we reuse source samples?
                 self._max_iters = self._max_epochs * len(data_loaders_tgt[i])
                 break
 

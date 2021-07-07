@@ -249,12 +249,12 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
     def forward_train(self,
                       img,
                       img_metas,
-                      gt_bboxes,
-                      gt_labels,
                       img_tgt,
                       img_metas_tgt,
-                      gt_bboxes_tgt,
-                      gt_labels_tgt,
+                      gt_bboxes=None,
+                      gt_labels=None,
+                      gt_bboxes_tgt=None,
+                      gt_labels_tgt=None,
                       gt_bboxes_ignore=None,
                       gt_masks=None,
                       proposals=None,
@@ -275,13 +275,13 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
 
             gt_labels (list[Tensor]): class indices corresponding to each box
 
-            img_tgt
+            img_tgt (Tensor): ``img`` for target domain
 
-            img_metas_tgt
+            img_metas_tgt (list[dict]): ``img_metas`` for target domain
 
-            gt_bboxes_tgt
+            gt_bboxes_tgt (list[Tensor]): ``gt_bboxes`` for target domain
 
-            gt_labels_tgt
+            gt_labels_tgt (list[Tensor]): ``gt_labels`` for target domain
 
             gt_bboxes_ignore (None | list[Tensor]): specify which bounding
                 boxes can be ignored when computing the loss.
@@ -295,6 +295,8 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         Returns:
             dict[str, Tensor]: a dictionary of loss components
         """
+        assert gt_masks is None, 'domain adaptation cannot handle gt_masks as of now'
+
         batch_size = img.size(0)
 
         # extract features in both domains
@@ -316,9 +318,9 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                 proposal_cfg=proposal_cfg)
             rpn_losses_tgt, proposal_list_tgt = self.rpn_head.forward_train(
                 x_tgt,
-                img_metas,
-                gt_bboxes,
-                gt_labels=None,
+                img_metas_tgt,
+                gt_bboxes_tgt,
+                gt_labels_tgt=None,
                 gt_bboxes_ignore=gt_bboxes_ignore,
                 proposal_cfg=proposal_cfg)
             # we only want to improve on the target domain
@@ -331,7 +333,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         roi_losses_src, rois_src, feat_roi_src, feat_rcnn_src, cls_score_src = self.roi_head.forward_train(
             x_src, img_metas, proposal_list_src, gt_bboxes, gt_labels, gt_bboxes_ignore, gt_masks, **kwargs)
         roi_losses_tgt, rois_tgt, feat_roi_tgt, feat_rcnn_tgt, cls_score_tgt = self.roi_head.forward_train(
-            x_tgt, img_metas, proposal_list_tgt, gt_bboxes, gt_labels, gt_bboxes_ignore, gt_masks, **kwargs)
+            x_tgt, img_metas_tgt, proposal_list_tgt, gt_bboxes_tgt, gt_labels_tgt, gt_bboxes_ignore, gt_masks, **kwargs)
         # we only want to improve on the target domain
         losses.update(roi_losses_tgt) # RCNN_loss_cls + RCNN_loss_bbox
 

@@ -17,6 +17,13 @@ from mmdet.datasets import build_dataset
 from mmdet.models import build_detector
 from mmdet.utils import collect_env, get_root_logger
 
+# import debugpy
+
+# debugpy.listen(5678)
+# print('Waiting for debugger to attach...')
+# debugpy.wait_for_client()
+# debugpy.breakpoint()
+# print('break on this line')
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector using domain adaptation')

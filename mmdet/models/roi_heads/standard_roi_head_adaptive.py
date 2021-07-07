@@ -99,7 +99,7 @@ class StandardRoIHeadAdaptive(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
         losses = dict()
         # bbox head forward and loss
         if self.with_bbox:
-            bbox_results, rois, feats_roi = self._bbox_forward_train(x, sampling_results,
+            bbox_results = self._bbox_forward_train(x, sampling_results,
                                                     gt_bboxes, gt_labels,
                                                     img_metas)
             losses.update(bbox_results['loss_bbox'])

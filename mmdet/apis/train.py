@@ -14,7 +14,7 @@ from mmdet.datasets import (build_dataloader, build_dataset,
                             replace_ImageToTensor)
 from mmdet.utils import get_root_logger
 
-from mmdetection.mmdet.adaptive import EpochBasedRunnerAdaptive
+from mmdet.adaptive import EpochBasedRunnerAdaptive
 
 # TODO not sure if this is needed or not
 # from mmcv.runner.builder import RUNNERS
