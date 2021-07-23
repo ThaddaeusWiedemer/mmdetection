@@ -41,7 +41,7 @@ model = dict(
             out_channels=256,
             featmap_strides=[4, 8, 16, 32]),
         bbox_head=dict(
-            type='Shared2FCBBoxHead',
+            type='Shared2FCBBoxHeadAdaptive',
             in_channels=256,
             fc_out_channels=1024,
             roi_feat_size=7,
@@ -55,8 +55,12 @@ model = dict(
                 type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
             loss_bbox=dict(type='L1Loss', loss_weight=1.0))),
     train_cfg=dict(
-        loss_weight_da=1.0, # loss for domain adaptation after average pool
-        loss_weight_da_rpn=1.0, # loss for domain adaptation after roi
+        loss_weight_da=1.0, # loss for domain adaptation
+        loss_weight_da_roi=1.0, # loss for domain adaptation after roi
+        loss_weight_da_rcnn=1.0, # loss for domain adaptation in rcnn head
+        loss_weight_da_intra=1.0, # loss for domain adaptation intra-class loss compared to inter-class loss
+        loss_weight_da_inter=1.0, # loss for domain adaptation inter-class loss compared to intra-class loss
+        da_distance='cosine', # distance function for domain adaptation losses
         rpn=dict(
             assigner=dict(
                 type='MaxIoUAssigner',
@@ -79,7 +83,6 @@ model = dict(
             max_per_img=1000,
             nms=dict(type='nms', iou_threshold=0.7),
             min_bbox_size=0),
-        # where is the code for this part?
         rcnn=dict(
             assigner=dict(
                 type='MaxIoUAssigner',
@@ -117,10 +120,21 @@ classes = ('person', )
 img_norm_cfg = dict(
     mean=[103.53, 116.28, 123.675], std=[1.0, 1.0, 1.0], to_rgb=False)
 
-train_pipeline = [
+train_pipeline_src = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True),
-    dict(type='Resize', img_scale=(800, 800), keep_ratio=True), # TODO isn't this completely unnecessary?
+    dict(type='Resize', img_scale=(800, 800), keep_ratio=True),
+    dict(type='RandomFlip', flip_ratio=0.5),
+    dict(type='Normalize', **img_norm_cfg),
+    dict(type='Pad', size_divisor=32),
+    dict(type='DefaultFormatBundle'),
+    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels'])
+]
+
+train_pipeline_tgt = [
+    dict(type='LoadImageFromFile'),
+    dict(type='LoadAnnotations', with_bbox=True),
+    dict(type='Resize', img_scale=(800, 800), keep_ratio=True),
     dict(type='RandomFlip', flip_ratio=0.5),
     dict(
         type='Albu',
@@ -131,7 +145,7 @@ train_pipeline = [
                 scale_limit=0.0,
                 rotate_limit=180,
                 interpolation=1,
-                p=0.5)
+                p=1.0)
         ],
         bbox_params=dict(
             type='BboxParams',
@@ -171,13 +185,13 @@ data = dict(
         type=dataset_type,
         ann_file=data_root_src + 'omni_training.json',
         img_prefix=data_root_src,
-        pipeline=train_pipeline,
+        pipeline=train_pipeline_src,
         classes=classes),
     train_tgt=dict( # target domain training set
         type=dataset_type,
         ann_file=data_root_tgt + 'training.json',
         img_prefix=data_root_tgt,
-        pipeline=train_pipeline,
+        pipeline=train_pipeline_tgt,
         classes=classes),
     val=dict( # validation set from target domain
         type=dataset_type,
@@ -195,7 +209,7 @@ data = dict(
 
 # training and optimizer
 # fine-tuning: smaller lr, freeze FPN (neck), freeze RPN
-evaluation = dict(interval=500, metric='bbox')
+evaluation = dict(interval=5, metric='bbox')
 optimizer = dict(
     type='SGD',
     lr=0.001,
@@ -214,11 +228,11 @@ lr_config = dict(
     warmup=None,
     # warmup_iters=500,
     # warmup_ratio=0.001,
-    step=[10000])
+    step=[6])
 # change to iteration based runner with 1776*x iterations for training on PIROPO
 runner = dict(type='EpochBasedRunnerAdaptive', max_epochs=12) # use adaptive runner that loads 2 datasets
 checkpoint_config = dict(interval=1) # for iter-based runner use 1776 or similar
-log_config = dict(interval=50, hooks=[dict(type='TextLoggerHook')])
+log_config = dict(interval=1, hooks=[dict(type='TextLoggerHook')])
 custom_hooks = [dict(type='NumClassCheckHook')]
 dist_params = dict(backend='nccl')
 log_level = 'INFO'

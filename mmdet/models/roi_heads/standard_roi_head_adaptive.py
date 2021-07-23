@@ -8,7 +8,10 @@ from .test_mixins import BBoxTestMixin, MaskTestMixin
 
 @HEADS.register_module()
 class StandardRoIHeadAdaptive(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
-    """Simplest base roi head including one bbox head and one mask head."""
+    """Simplest base roi head including one bbox head and one mask head.
+    
+    Modified for domain adaptation to pass on intermediary features and information to domain adaptation module.
+    """
 
     def init_assigner_sampler(self):
         """Initialize assigner and sampler."""
@@ -121,7 +124,7 @@ class StandardRoIHeadAdaptive(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
         feats_roi = bbox_feats
         if self.with_shared_head:
             bbox_feats = self.shared_head(bbox_feats)
-        cls_score, bbox_pred = self.bbox_head(bbox_feats)
+        cls_score, bbox_pred, bbox_feats = self.bbox_head(bbox_feats)
 
         bbox_results = dict(
             cls_score=cls_score, bbox_pred=bbox_pred, bbox_feats=bbox_feats, bbox_feats_roi=feats_roi)

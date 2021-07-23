@@ -16,11 +16,6 @@ from mmdet.utils import get_root_logger
 
 from mmdet.adaptive import EpochBasedRunnerAdaptive
 
-# TODO not sure if this is needed or not
-# from mmcv.runner.builder import RUNNERS
-# RUNNERS.register_module(module=EpochBasedRunnerAdaptive, name='EpochBasedRunnerAdaptive')
-
-
 def set_random_seed(seed, deterministic=False):
     """Set random seed.
 
@@ -321,5 +316,4 @@ def train_detector_adaptive(model,
         runner.resume(cfg.resume_from)
     elif cfg.load_from:
         runner.load_checkpoint(cfg.load_from)
-    # TODO modify runner to work with two datasets
     runner.run(data_loaders_src, data_loaders_tgt, cfg.workflow)

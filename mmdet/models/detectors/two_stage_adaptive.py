@@ -50,11 +50,12 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
             self.roi_head = build_head(roi_head)
 
             # fc layers for domain adaptation
+            # TODO find more elegant solution to get correct sizes
             roi_out_size = roi_head['bbox_roi_extractor']['roi_layer']['output_size']
             roi_out_size *= roi_out_size
             roi_out_size *= roi_head['bbox_roi_extractor']['out_channels']
             self.da_fc_roi = nn.Linear(roi_out_size, 128)
-            self.da_fc_rcnn = nn.Linear(2048, 64)
+            self.da_fc_rcnn = nn.Linear(roi_head['bbox_head']['fc_out_channels'], 64)
 
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
@@ -95,22 +96,35 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         return outs
 
     def _gpa_loss(self,
-                         feat,
-                         cls_prob,
-                         rois,
-                         feat_tgt,
-                         cls_prob_tgt,
-                         rois_tgt,
-                         batch_size,
-                         margin=1,
-                         epsilon=1e-6):
+                feat,
+                cls_prob,
+                rois,
+                gt_bboxes,
+                gt_labels,
+                feat_tgt,
+                cls_prob_tgt,
+                rois_tgt,
+                gt_bboxes_tgt,
+                gt_labels_tgt,
+                batch_size,
+                d='cosine',
+                margin=1,
+                epsilon=1e-6):
         """Graph-based prototpye daptation loss as in https://github.com/ChrisAllenMing/GPA-detection.
         
         """
         # TODO check if this is working correctly for only 1 class
-        def distance(feat_a, feat_b):
+        def distance(feat_a, feat_b, distance='cosine'):
             """use this to compute distances between features for this loss"""
-            return torch.pow(feat_a - feat_b, 2.0).mean()
+            distances = ['mean_squared', 'euclidean', 'cosine']
+            assert distance in distances, f'distance for GPA must be one of {distances}, but got {distance}'
+            
+            if distance == 'mean_squared':
+                return torch.pow(feat_a - feat_b, 2.0).mean()
+            if distance == 'euclidean':
+                return torch.pow(feat_a - feat_b, 2.0).sum().sqrt()
+            cos = nn.CosineSimilarity(dim=0)
+            return 1 - cos(feat_a, feat_b)
 
         def get_adj(rois, epsilon=epsilon):
             """use this to calculate adjacency matrix of region proposals based on IoU
@@ -124,6 +138,10 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
             area = area + (area == 0).float() * epsilon
 
             # compute iou
+            # x_min_ab of the overlap of a and b is max{x_min_a, x_min_b}
+            # x_max_ab of the overlap of a and b is min{x_max_a, x_max_b}
+            # same for y
+            # these values can be computed for all pairs (a,b) at the same time using matrices
             x_min = rois[:,1]
             x_min_copy = torch.stack([x_min] * rois.size(0), dim=0)
             x_min_copy_ = x_min_copy.permute((1,0))
@@ -150,24 +168,83 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
             union = area_sum - intersection
             iou = intersection / union
 
+            # intuitively, all diagonal entries of the adjacency matrix should be 1.0. However, some ROIs have 0 width
+            # or height, so we we set the diagonal here
+            iou.fill_diagonal_(1.)
+            # adjacancy matrix should have 1.0 on diagonal
+            assert iou.diagonal().numel() - iou.diagonal().nonzero().size(0) == 0, 'some diagonal entries were 0'
+
+            return iou
+
+        def get_adj_gt(rois, gts):
+            """calculate adjacency matrix between ROIs and ground truth bboxes
+            
+            Arguments:
+                rois (Tensor): of shape (num_rois, 5), where the second dimension contains the values
+                    in the [batch_idx, x_min, y_min, x_max, y_max] format
+                gt_bboxes (Tensor): of shape (num_gts, 4), where the second dimension contains the values
+                    [x_min, y_min, x_max, y_may]
+            
+            Returns:
+                Tensor: of shape (num_gts, num_rois), where each entry corresponds to the IoU of a ground truth with the
+                    corresponding region
+            """
+            # compute the area of every bbox
+            area_rois = (rois[:, 3] - rois[:, 1]) * (rois[:, 4] - rois[:, 2])
+            area_rois = area_rois + (area_rois == 0).float() * epsilon
+            area_gts = (gts[:, 2] - gts[:, 0]) * (gts[:, 3] - gts[:, 1])
+            area_gts = area_gts + (area_gts == 0).float() * epsilon
+
+            # compute iou as in get_adj()
+            x_min_rois = torch.stack([rois[:,1]] * gts.size(0), dim=0)
+            x_min_gts = torch.stack([gts[:,0]] * rois.size(0), dim=0).permute((1,0))
+            x_min_matrix = torch.max(torch.stack([x_min_rois, x_min_gts], dim=-1), dim=-1)[0]
+            x_max_rois = torch.stack([rois[:,3]] * gts.size(0), dim=0)
+            x_max_gts = torch.stack([gts[:,2]] * rois.size(0), dim=0).permute((1,0))
+            x_max_matrix = torch.min(torch.stack([x_max_rois, x_max_gts], dim=-1), dim=-1)[0]
+            y_min_rois = torch.stack([rois[:,2]] * gts.size(0), dim=0)
+            y_min_gts = torch.stack([gts[:,1]] * rois.size(0), dim=0).permute((1,0))
+            y_min_matrix = torch.max(torch.stack([y_min_rois, y_min_gts], dim=-1), dim=-1)[0]
+            y_max_rois = torch.stack([rois[:,4]] * gts.size(0), dim=0)
+            y_max_gts = torch.stack([gts[:,3]] * rois.size(0), dim=0).permute((1,0))
+            y_max_matrix = torch.min(torch.stack([y_max_rois, y_max_gts], dim=-1), dim=-1)[0]
+
+            w = torch.max(torch.stack([(x_max_matrix - x_min_matrix), torch.zeros_like(x_min_matrix)], dim = -1), dim = -1)[0]
+            h = torch.max(torch.stack([(y_max_matrix - y_min_matrix), torch.zeros_like(y_min_matrix)], dim = -1), dim = -1)[0]
+            intersection = w * h
+            _area_rois = torch.stack([area_rois] * gts.size(0), dim = 0)
+            _area_gts = torch.stack([area_gts] * rois.size(0), dim = 0).permute((1,0))
+            area_sum = _area_rois + _area_gts
+            union = area_sum - intersection
+            iou = intersection / union
+
             return iou
 
         def inter_class_loss(feat_a, feat_b):
             # could use F.relu to write more concisely
-            out = torch.pow((margin - torch.sqrt(distance(feat_a, feat_b))) / margin, 2) \
-                * torch.pow(torch.max(margin - torch.sqrt(distance(feat_a, feat_b)), torch.tensor(0).float().cuda()), 2.0)
+            out = torch.pow((margin - torch.sqrt(distance(feat_a, feat_b, d))) / margin, 2) \
+                * torch.pow(torch.max(margin - torch.sqrt(distance(feat_a, feat_b, d)), torch.tensor(0).float().cuda()), 2.0)
             return out
 
-        # get the feature embedding of every class for source and target domains with GCN
+        # get distance metric
+        d = self.train_cfg.get('da_distance', 'cosine')
+
+        # view inputs as (batch_size, roi_sampler_num, )
+        # with dimensions (batch_size, roi_sampler_num, num_feat)
         feat = feat.view(batch_size, feat.size(0) // batch_size, feat.size(1))
         feat_tgt = feat_tgt.view(batch_size, feat_tgt.size(0) // batch_size, feat_tgt.size(1))
 
         # get the class probability of every class for source and target domains
+        # with dimensions (batch_size, roi_sampler_num, num_feat)
         cls_prob = cls_prob.view(batch_size, cls_prob.size(0) // batch_size, cls_prob.size(1))
         cls_prob_tgt = cls_prob_tgt.view(batch_size, cls_prob_tgt.size(0) // batch_size, cls_prob_tgt.size(1))
 
+        # view rois as (batch_size, roi_sampler_num, 5)
+        rois = rois.view(batch_size, rois.size(0) // batch_size, rois.size(1))
+        rois_tgt = rois_tgt.view(batch_size, rois_tgt.size(0) // batch_size, rois_tgt.size(1))
+
         num_classes = cls_prob.size(2)
-        class_feat = list()
+        class_ptt = list()
         tgt_class_feat = list()
 
         for i in range(num_classes):
@@ -184,6 +261,11 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                 # graph-based aggregation
                 tmp_batch_feat = torch.mm(tmp_batch_adj, tmp_batch_feat_)
                 tmp_batch_weight = torch.mm(tmp_batch_adj, tmp_batch_weight_)
+                
+                # divide by sum of edge weights as in paper
+                weight_sum = tmp_batch_adj.sum(dim=1).unsqueeze(1)
+                tmp_batch_feat = torch.div(tmp_batch_feat, weight_sum)
+                tmp_batch_weight = torch.div(tmp_batch_weight, weight_sum)
 
                 tmp_feat.append(tmp_batch_feat)
                 tmp_weight.append(tmp_batch_weight)
@@ -191,7 +273,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
             tmp_class_feat_ = torch.stack(tmp_feat, dim = 0)
             tmp_class_weight = torch.stack(tmp_weight, dim = 0)
             tmp_class_feat = torch.sum(torch.sum(tmp_class_feat_, dim=1), dim = 0) / (torch.sum(tmp_class_weight) + epsilon)
-            class_feat.append(tmp_class_feat)
+            class_ptt.append(tmp_class_feat)
 
             tmp_tgt_cls_prob = cls_prob_tgt[:, :, i].view(cls_prob_tgt.size(0), cls_prob_tgt.size(1), 1)
             tmp_tgt_class_feat = feat_tgt * tmp_tgt_cls_prob
@@ -207,15 +289,21 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                 tmp_tgt_batch_feat = torch.mm(tmp_tgt_batch_adj, tmp_tgt_batch_feat_)
                 tmp_tgt_batch_weight = torch.mm(tmp_tgt_batch_adj, tmp_tgt_batch_weight_)
 
+                # divide by sum of edge weights as in paper
+                weight_sum = tmp_tgt_batch_adj.sum(dim=1).unsqueeze(1)
+                tmp_tgt_batch_feat = torch.div(tmp_tgt_batch_feat, weight_sum)
+                tmp_tgt_batch_weight = torch.div(tmp_tgt_batch_weight, weight_sum)
+
                 tmp_tgt_feat.append(tmp_tgt_batch_feat)
                 tmp_tgt_weight.append(tmp_tgt_batch_weight)
 
+            # build prototypes from all samples in batch. results doesn't have batch dimension
             tmp_tgt_class_feat_ = torch.stack(tmp_tgt_feat, dim = 0)
             tmp_tgt_class_weight = torch.stack(tmp_tgt_weight, dim = 0)
             tmp_tgt_class_feat = torch.sum(torch.sum(tmp_tgt_class_feat_, dim=1), dim = 0) / (torch.sum(tmp_tgt_class_weight) + epsilon)
             tgt_class_feat.append(tmp_tgt_class_feat)
 
-        class_feat = torch.stack(class_feat, dim = 0)
+        class_ptt = torch.stack(class_ptt, dim = 0)
         tgt_class_feat = torch.stack(tgt_class_feat, dim = 0)
 
         # get the intra-class and inter-class adaptation loss
@@ -223,16 +311,16 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         loss_inter = 0
 
         # TODO replace class_feat.size(0) with num_classes for better readability
-        for i in range(class_feat.size(0)):
-            tmp_src_feat_1 = class_feat[i, :]
+        for i in range(class_ptt.size(0)):
+            tmp_src_feat_1 = class_ptt[i, :]
             tmp_tgt_feat_1 = tgt_class_feat[i, :]
 
             # intra-class loss is just distance of features
-            loss_intra = loss_intra + distance(tmp_src_feat_1, tmp_tgt_feat_1)
+            loss_intra = loss_intra + distance(tmp_src_feat_1, tmp_tgt_feat_1, d)
 
             # inter-class loss is distance between all 4 source-target pairs
-            for j in range(i+1, class_feat.size(0)):
-                tmp_src_feat_2 = class_feat[j, :]
+            for j in range(i+1, class_ptt.size(0)):
+                tmp_src_feat_2 = class_ptt[j, :]
                 tmp_tgt_feat_2 = tgt_class_feat[j, :]
 
                 loss_inter = loss_inter + inter_class_loss(tmp_src_feat_1, tmp_src_feat_2)
@@ -241,8 +329,32 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                 loss_inter = loss_inter + inter_class_loss(tmp_tgt_feat_1, tmp_src_feat_2)
 
         # normalize losses
-        loss_intra = loss_intra / class_feat.size(0)
-        loss_inter = loss_inter / (class_feat.size(0) * (class_feat.size(0) - 1) * 2)
+        loss_intra = loss_intra / class_ptt.size(0)
+        loss_inter = loss_inter / (class_ptt.size(0) * (class_ptt.size(0) - 1) * 2)
+
+        # intra-loss with ground-truths
+        # TODO weigh features with foreground class-probabilities --> which class is foreground class?
+        # TODO then the weight also has to be accumulated in every batch and can be used to normalize after aggregation
+        class_ptts = []
+        class_ptts_tgt = []
+        for j in range(batch_size):
+            batch_feat = feat[j, :, :]
+            batch_adj = get_adj_gt(rois[j, :, :], gt_bboxes[j])
+            batch_feat = torch.mm(batch_adj, batch_feat) # these are the instance prototypes for 1 image
+            batch_feat = batch_feat.mean(dim=0) # this is the class prototype for 1 image
+            class_ptts.append(batch_feat)
+            
+            batch_feat_tgt = feat_tgt[j, :, :]
+            batch_adj_tgt = get_adj_gt(rois_tgt[j, :, :], gt_bboxes_tgt[j])
+            batch_feat_tgt = torch.mm(batch_adj_tgt, batch_feat_tgt)
+            batch_feat_tgt = batch_feat_tgt.mean(dim=0)
+            class_ptts_tgt.append(batch_feat_tgt)
+
+        # aggregate over batch to get final class prototype
+        class_ptt = torch.stack(class_ptts, dim=0).mean(dim=0) 
+        class_ptt_tgt = torch.stack(class_ptts_tgt, dim=0).mean(dim=0)
+
+        loss_intra_gt = distance(class_ptt, class_ptt_tgt, d)
 
         return loss_intra, loss_inter
     
@@ -339,25 +451,34 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
 
         # adapting on features after ROI and after RCNN only makes a difference when the ROI-head has shared
         # layers
-        assert not torch.eq(feat_roi_src, feat_rcnn_src).all(), 'The ROI-head has no shared layers!'
+        if feat_roi_src.size() == feat_rcnn_src.size():
+            if torch.eq(feat_roi_src, feat_rcnn_src).all():
+                warnings.warn('The features for domain adaptation after ROI and RCNN are the same, the model might not be\
+                    using a shared head')
 
         # feed all features used for domain adaptation through fc layer (2 different ones for ROI and RCNN features)
-        feat_roi_src = self.da_fc_roi(feat_roi_src)
-        feat_roi_tgt = self.da_fc_roi(feat_roi_tgt)
+        # the dimensions of the features are
+        #   ROI:  (samples_per_gpu * roi_sampler_num, roi_out_channels, roi_output_size, roi_output_size)
+        #   RCNN: (samples_per_gpu * roi_sampler_num, head_fc_out_channels)
+        feat_roi_src = self.da_fc_roi(feat_roi_src.flatten(1))
+        feat_roi_tgt = self.da_fc_roi(feat_roi_tgt.flatten(1))
         feat_rcnn_src = self.da_fc_rcnn(feat_rcnn_src)
         feat_rcnn_tgt = self.da_fc_rcnn(feat_rcnn_tgt)
 
         # compute intra-class and inter-class loss after ROI and after RCNN
         da_weight = self.train_cfg.get('loss_weight_da', 1.0)
-        da_weight_rpn = self.train_cfg.get('loss_weight_da_rpn', 1.0)
+        da_weight_roi = self.train_cfg.get('loss_weight_da_roi', 1.0)
+        da_weight_rcnn = self.train_cfg.get('loss_weight_da_rcnn', 1.0)
+        da_weight_intra = self.train_cfg.get('loss_weight_da_intra', 1.0)
+        da_weight_inter = self.train_cfg.get('loss_weight_da_inter', 1.0)
         
-        roi_loss_intra, roi_loss_inter = self._gpa_loss(feat_roi_src, cls_score_src, rois_src, feat_roi_tgt, cls_score_tgt, rois_tgt, batch_size)
-        losses.update({'roi_loss_intra': roi_loss_intra * da_weight_rpn})
-        losses.update({'roi_loss_inter': roi_loss_inter * da_weight_rpn})
+        roi_loss_intra, roi_loss_inter = self._gpa_loss(feat_roi_src, cls_score_src, rois_src, gt_bboxes, gt_labels, feat_roi_tgt, cls_score_tgt, rois_tgt, gt_bboxes_tgt, gt_labels_tgt, batch_size)
+        losses.update({'roi_loss_intra': roi_loss_intra * da_weight * da_weight_roi * da_weight_intra})
+        losses.update({'roi_loss_inter': roi_loss_inter * da_weight * da_weight_roi * da_weight_inter})
 
-        rcnn_loss_intra, rcnn_loss_inter = self._gpa_loss(feat_rcnn_src, cls_score_src, rois_src, feat_rcnn_tgt, cls_score_tgt, rois_tgt, batch_size)
-        losses.update({'rcnn_loss_intra': rcnn_loss_intra * da_weight})
-        losses.update({'rcnn_loss_inter': rcnn_loss_inter * da_weight})
+        rcnn_loss_intra, rcnn_loss_inter = self._gpa_loss(feat_rcnn_src, cls_score_src, rois_src, gt_bboxes, gt_labels, feat_rcnn_tgt, cls_score_tgt, rois_tgt, gt_bboxes_tgt, gt_labels_tgt, batch_size)
+        losses.update({'rcnn_loss_intra': rcnn_loss_intra * da_weight * da_weight_rcnn * da_weight_intra})
+        losses.update({'rcnn_loss_inter': rcnn_loss_inter * da_weight * da_weight_rcnn * da_weight_inter})
 
         return losses
 

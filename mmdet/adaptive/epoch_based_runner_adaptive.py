@@ -55,6 +55,7 @@ class EpochBasedRunnerAdaptive(BaseRunner):
         self.call_hook('before_train_epoch')
         time.sleep(2)  # Prevent possible deadlock during epoch transition
         # we want to exhaust the samples from target domain, even if we need to reuse samples from source domain
+        # dataloaders are constructed to be shuffled after every epoch, so this is not a problem
         for i, data_batches in enumerate(zip(cycle(self.data_loader_src), self.data_loader)):
             data_batch, data_batch_tgt = data_batches
             # rename target keys
