@@ -701,7 +701,7 @@ class CocoDataset(CustomDataset):
                         cocoEval._paramsEval)
                     # save result
                     eval_results[f'{metric}_LAMR'] = lamr
-                    eval_results[f'{metric}_mr_FPPI'] = mr_FPPI
+                    # eval_results[f'{metric}_mr_FPPI'] = mr_FPPI
                     # done, remove LAMR, pycocotools doesn't calculate it
                     metric_items.remove('LAMR')
 

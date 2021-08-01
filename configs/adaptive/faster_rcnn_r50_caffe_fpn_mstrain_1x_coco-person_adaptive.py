@@ -55,12 +55,16 @@ model = dict(
                 type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
             loss_bbox=dict(type='L1Loss', loss_weight=1.0))),
     train_cfg=dict(
-        loss_weight_da=1.0, # loss for domain adaptation
-        loss_weight_da_roi=1.0, # loss for domain adaptation after roi
-        loss_weight_da_rcnn=1.0, # loss for domain adaptation in rcnn head
-        loss_weight_da_intra=1.0, # loss for domain adaptation intra-class loss compared to inter-class loss
-        loss_weight_da_inter=1.0, # loss for domain adaptation inter-class loss compared to intra-class loss
-        da_distance='cosine', # distance function for domain adaptation losses
+        gpa=dict(
+            loss_roi_intra=10.0, # loss for domain adaptation after roi
+            loss_roi_inter=0.1, # loss for domain adaptation in rcnn head
+            loss_rcnn_intra=100.0, # loss for domain adaptation intra-class loss compared to inter-class loss
+            loss_rcnn_inter=0.1, # loss for domain adaptation inter-class loss compared to intra-class loss
+            distance='mean_squared', # distance function for domain adaptation losses
+            normalize=False, # normalize weights when building instance prototypes
+            use_graph=True, # whether to use adjacency matrix for aggregation of instance prototypes
+            fc_layer=dict(type='standard')
+        ),
         rpn=dict(
             assigner=dict(
                 type='MaxIoUAssigner',
