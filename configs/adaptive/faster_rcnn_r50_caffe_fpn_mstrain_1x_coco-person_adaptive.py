@@ -63,7 +63,7 @@ model = dict(
             distance='mean_squared', # distance function for domain adaptation losses
             normalize=False, # normalize weights when building instance prototypes
             use_graph=True, # whether to use adjacency matrix for aggregation of instance prototypes
-            fc_layer=dict(type='standard')
+            fc_layer='fc_layer'
         ),
         rpn=dict(
             assigner=dict(

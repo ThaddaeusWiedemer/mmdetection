@@ -59,22 +59,23 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                 roi_out_size *= roi_out_size
                 roi_out_size *= roi_head['bbox_roi_extractor']['out_channels']
 
-                self.gpa_layer = self.gpa_cfg.get('fc_layer', {'type': 'fc_layer', 'lr': 1.0})
+                self.gpa_layer = self.gpa_cfg.get('fc_layer', 'fc_layer')
+                assert self.gpa_layer in ['fc_layer', 'avgpool', 'maxpool', 'none']
 
-                if self.gpa_layer['type'] == 'fc_layer':
+                if self.gpa_layer == 'fc_layer':
                     self.gpa_layer_roi = nn.Linear(roi_out_size, 128)
                     self.gpa_layer_rcnn = nn.Linear(roi_head['bbox_head']['fc_out_channels'], 64)
-                elif self.gpa_layer['type'] == 'avgpool':
+                elif self.gpa_layer == 'avgpool':
                     # reduce 256*7*7 to 128: 
                     self.gpa_layer_roi = nn.AvgPool1d(98)
                     # reduce 1024 to 64
                     self.gpa_layer_rcnn = nn.AvgPool1d(16)
-                elif self.gpa_layer['type'] == 'maxpool':
+                elif self.gpa_layer == 'maxpool':
                     # reduce 256*7*7 to 128: 
                     self.gpa_layer_roi = nn.MaxPool1d(98)
                     # reduce 1024 to 64
                     self.gpa_layer_rcnn = nn.MaxPool1d(16)
-                elif self.gpa_layer['type'] is None:
+                elif self.gpa_layer == 'none':
                     pass
 
     @property
@@ -111,7 +112,134 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         roi_outs = self.roi_head.forward_dummy(x, proposals)
         outs = outs + (roi_outs, )
         return outs
+    
+    def forward_train(self,
+                      img,
+                      img_metas,
+                      img_tgt,
+                      img_metas_tgt,
+                      gt_bboxes=None,
+                      gt_labels=None,
+                      gt_bboxes_tgt=None,
+                      gt_labels_tgt=None,
+                      gt_bboxes_ignore=None,
+                      gt_masks=None,
+                      proposals=None,
+                      **kwargs):
+        """
+        Args:
+            img (Tensor): of shape (N, C, H, W) encoding input images.
+                Typically these should be mean centered and std scaled.
 
+            img_metas (list[dict]): list of image info dict where each dict
+                has: 'img_shape', 'scale_factor', 'flip', and may also contain
+                'filename', 'ori_shape', 'pad_shape', and 'img_norm_cfg'.
+                For details on the values of these keys see
+                `mmdet/datasets/pipelines/formatting.py:Collect`.
+
+            gt_bboxes (list[Tensor]): Ground truth bboxes for each image with
+                shape (num_gts, 4) in [tl_x, tl_y, br_x, br_y] format.
+
+            gt_labels (list[Tensor]): class indices corresponding to each box
+
+            img_tgt (Tensor): ``img`` for target domain
+
+            img_metas_tgt (list[dict]): ``img_metas`` for target domain
+
+            gt_bboxes_tgt (list[Tensor]): ``gt_bboxes`` for target domain
+
+            gt_labels_tgt (list[Tensor]): ``gt_labels`` for target domain
+
+            gt_bboxes_ignore (None | list[Tensor]): specify which bounding
+                boxes can be ignored when computing the loss.
+
+            gt_masks (None | Tensor) : true segmentation masks for each box
+                used if the architecture supports a segmentation task.
+
+            proposals : override rpn proposals with custom proposals. Use when
+                `with_rpn` is False.
+
+        Returns:
+            dict[str, Tensor]: a dictionary of loss components
+        """
+        assert gt_masks is None, 'domain adaptation cannot handle gt_masks as of now'
+
+        batch_size = img.size(0)
+
+        # extract features in both domains
+        x_src = self.extract_feat(img)
+        x_tgt = self.extract_feat(img_tgt)
+
+        losses = dict()
+
+        # RPN forward and loss in both domains
+        if self.with_rpn:
+            proposal_cfg = self.train_cfg.get('rpn_proposal',
+                                              self.test_cfg.rpn)
+            rpn_losses_src, proposal_list_src = self.rpn_head.forward_train(
+                x_src,
+                img_metas,
+                gt_bboxes,
+                gt_labels=None,
+                gt_bboxes_ignore=gt_bboxes_ignore,
+                proposal_cfg=proposal_cfg)
+            rpn_losses_tgt, proposal_list_tgt = self.rpn_head.forward_train(
+                x_tgt,
+                img_metas_tgt,
+                gt_bboxes_tgt,
+                gt_labels_tgt=None,
+                gt_bboxes_ignore=gt_bboxes_ignore,
+                proposal_cfg=proposal_cfg)
+            # we only want to improve on the target domain
+            losses.update(self._balance_losses(rpn_losses_tgt)) # RPN_loss_cls + RPN_loss_bbox
+        else:
+            raise NotImplementedError('Two stage domain-adaptive detector only works with RPN for now')
+            proposal_list = proposals
+
+        # get ROI losses and sampled ROIs in both domains
+        roi_losses_src, rois_src, feat_roi_src, feat_rcnn_src, cls_score_src = self.roi_head.forward_train(
+            x_src, img_metas, proposal_list_src, gt_bboxes, gt_labels, gt_bboxes_ignore, gt_masks, **kwargs)
+        roi_losses_tgt, rois_tgt, feat_roi_tgt, feat_rcnn_tgt, cls_score_tgt = self.roi_head.forward_train(
+            x_tgt, img_metas_tgt, proposal_list_tgt, gt_bboxes_tgt, gt_labels_tgt, gt_bboxes_ignore, gt_masks, **kwargs)
+        # we only want to improve on the target domain
+        losses.update(self._balance_losses(roi_losses_tgt)) # RCNN_loss_cls + RCNN_loss_bbox
+
+        # adapting on features after ROI and after RCNN only makes a difference when the ROI-head has shared
+        # layers
+        if feat_roi_src.size() == feat_rcnn_src.size() and torch.eq(feat_roi_src, feat_rcnn_src).all():
+            warnings.warn('The features for domain adaptation after ROI and RCNN are the same, the model might not be\
+                using a shared head')
+
+        # GPA
+        if self.gpa_cfg is not None:
+            # feed all features used for domain adaptation through fc layer (2 different ones for ROI and RCNN features)
+            # the dimensions of the features are
+            #   ROI:  (samples_per_gpu * roi_sampler_num, roi_out_channels, roi_output_size, roi_output_size)
+            #   RCNN: (samples_per_gpu * roi_sampler_num, head_fc_out_channels)
+            if self.gpa_layer == 'fc_layer':
+                feat_roi_src = self.gpa_layer_roi(feat_roi_src.flatten(1))
+                feat_roi_tgt = self.gpa_layer_roi(feat_roi_tgt.flatten(1))
+                feat_rcnn_src = self.gpa_layer_rcnn(feat_rcnn_src)
+                feat_rcnn_tgt = self.gpa_layer_rcnn(feat_rcnn_tgt)
+            elif self.gpa_layer in ['avgpool', 'maxpool']:
+                feat_roi_src = self.gpa_layer_roi(feat_roi_src.flatten(1).unsqueeze(1)).squeeze(1)
+                feat_roi_tgt = self.gpa_layer_roi(feat_roi_tgt.flatten(1).unsqueeze(1)).squeeze(1)
+                feat_rcnn_src = self.gpa_layer_rcnn(feat_rcnn_src.unsqueeze(1)).squeeze(1)
+                feat_rcnn_tgt = self.gpa_layer_rcnn(feat_rcnn_tgt.unsqueeze(1)).squeeze(1)
+            elif self.gpa_layer == 'none':
+                feat_roi_src = feat_roi_src.flatten(1)
+                feat_roi_tgt = feat_roi_tgt.flatten(1)
+                feat_rcnn_src = feat_rcnn_src
+                feat_rcnn_tgt = feat_rcnn_tgt
+
+            # compute intra-class and inter-class loss after ROI and RCNN
+            roi_loss_intra, roi_loss_inter = self._gpa_loss(feat_roi_src, cls_score_src, rois_src, gt_bboxes, gt_labels, feat_roi_tgt, cls_score_tgt, rois_tgt, gt_bboxes_tgt, gt_labels_tgt, batch_size)
+            rcnn_loss_intra, rcnn_loss_inter = self._gpa_loss(feat_rcnn_src, cls_score_src, rois_src, gt_bboxes, gt_labels, feat_rcnn_tgt, cls_score_tgt, rois_tgt, gt_bboxes_tgt, gt_labels_tgt, batch_size)
+
+            losses.update(self._gpa_balance_losses(roi_loss_intra, roi_loss_inter, rcnn_loss_intra, rcnn_loss_inter))            
+
+        return losses
+    
     def _gpa_distance(self, feat_a, feat_b):
         """use this to compute distances between features for this loss"""
         distances = ['mean_squared', 'euclidean', 'cosine']
@@ -377,140 +505,26 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         #     return loss_intra_gt, loss_inter
 
         return loss_intra, loss_inter
-    
-    def forward_train(self,
-                      img,
-                      img_metas,
-                      img_tgt,
-                      img_metas_tgt,
-                      gt_bboxes=None,
-                      gt_labels=None,
-                      gt_bboxes_tgt=None,
-                      gt_labels_tgt=None,
-                      gt_bboxes_ignore=None,
-                      gt_masks=None,
-                      proposals=None,
-                      **kwargs):
-        """
-        Args:
-            img (Tensor): of shape (N, C, H, W) encoding input images.
-                Typically these should be mean centered and std scaled.
 
-            img_metas (list[dict]): list of image info dict where each dict
-                has: 'img_shape', 'scale_factor', 'flip', and may also contain
-                'filename', 'ori_shape', 'pad_shape', and 'img_norm_cfg'.
-                For details on the values of these keys see
-                `mmdet/datasets/pipelines/formatting.py:Collect`.
+    def _gpa_balance_losses(self, roi_loss_intra, roi_loss_inter, rcnn_loss_intra, rcnn_loss_inter):
+        """Combine the GPA losses with their individual weights"""
+        roi_intra = self.gpa_cfg.get('loss_roi_intra', 1.0)
+        roi_inter = self.gpa_cfg.get('loss_roi_inter', 1.0)
+        rcnn_intra = self.gpa_cfg.get('loss_rcnn_intra', 1.0)
+        rcnn_inter = self.gpa_cfg.get('loss_rcnn_inter', 1.0)
 
-            gt_bboxes (list[Tensor]): Ground truth bboxes for each image with
-                shape (num_gts, 4) in [tl_x, tl_y, br_x, br_y] format.
+        losses = {}
 
-            gt_labels (list[Tensor]): class indices corresponding to each box
+        losses.update({'roi_loss_intra': roi_loss_intra * roi_intra})
+        losses.update({'roi_loss_inter': roi_loss_inter * roi_inter})
 
-            img_tgt (Tensor): ``img`` for target domain
+        losses.update({'rcnn_loss_intra': rcnn_loss_intra * rcnn_intra})
+        losses.update({'rcnn_loss_inter': rcnn_loss_inter * rcnn_inter})
 
-            img_metas_tgt (list[dict]): ``img_metas`` for target domain
+        return losses
 
-            gt_bboxes_tgt (list[Tensor]): ``gt_bboxes`` for target domain
-
-            gt_labels_tgt (list[Tensor]): ``gt_labels`` for target domain
-
-            gt_bboxes_ignore (None | list[Tensor]): specify which bounding
-                boxes can be ignored when computing the loss.
-
-            gt_masks (None | Tensor) : true segmentation masks for each box
-                used if the architecture supports a segmentation task.
-
-            proposals : override rpn proposals with custom proposals. Use when
-                `with_rpn` is False.
-
-        Returns:
-            dict[str, Tensor]: a dictionary of loss components
-        """
-        assert gt_masks is None, 'domain adaptation cannot handle gt_masks as of now'
-
-        batch_size = img.size(0)
-
-        # extract features in both domains
-        x_src = self.extract_feat(img)
-        x_tgt = self.extract_feat(img_tgt)
-
-        losses = dict()
-
-        # RPN forward and loss in both domains
-        if self.with_rpn:
-            proposal_cfg = self.train_cfg.get('rpn_proposal',
-                                              self.test_cfg.rpn)
-            rpn_losses_src, proposal_list_src = self.rpn_head.forward_train(
-                x_src,
-                img_metas,
-                gt_bboxes,
-                gt_labels=None,
-                gt_bboxes_ignore=gt_bboxes_ignore,
-                proposal_cfg=proposal_cfg)
-            rpn_losses_tgt, proposal_list_tgt = self.rpn_head.forward_train(
-                x_tgt,
-                img_metas_tgt,
-                gt_bboxes_tgt,
-                gt_labels_tgt=None,
-                gt_bboxes_ignore=gt_bboxes_ignore,
-                proposal_cfg=proposal_cfg)
-            # we only want to improve on the target domain
-            losses.update(rpn_losses_tgt) # RPN_loss_cls + RPN_loss_bbox
-        else:
-            raise NotImplementedError('Two stage domain-adaptive detector only works with RPN for now')
-            proposal_list = proposals
-
-        # get ROI losses and sampled ROIs in both domains
-        roi_losses_src, rois_src, feat_roi_src, feat_rcnn_src, cls_score_src = self.roi_head.forward_train(
-            x_src, img_metas, proposal_list_src, gt_bboxes, gt_labels, gt_bboxes_ignore, gt_masks, **kwargs)
-        roi_losses_tgt, rois_tgt, feat_roi_tgt, feat_rcnn_tgt, cls_score_tgt = self.roi_head.forward_train(
-            x_tgt, img_metas_tgt, proposal_list_tgt, gt_bboxes_tgt, gt_labels_tgt, gt_bboxes_ignore, gt_masks, **kwargs)
-        # we only want to improve on the target domain
-        losses.update(roi_losses_tgt) # RCNN_loss_cls + RCNN_loss_bbox
-
-        # adapting on features after ROI and after RCNN only makes a difference when the ROI-head has shared
-        # layers
-        if feat_roi_src.size() == feat_rcnn_src.size() and torch.eq(feat_roi_src, feat_rcnn_src).all():
-            warnings.warn('The features for domain adaptation after ROI and RCNN are the same, the model might not be\
-                using a shared head')
-
-        # GPA
-        if self.gpa_cfg is not None:
-            # feed all features used for domain adaptation through fc layer (2 different ones for ROI and RCNN features)
-            # the dimensions of the features are
-            #   ROI:  (samples_per_gpu * roi_sampler_num, roi_out_channels, roi_output_size, roi_output_size)
-            #   RCNN: (samples_per_gpu * roi_sampler_num, head_fc_out_channels)
-            if self.gpa_layer == 'fc_layer':
-                feat_roi_src = self.gpa_layer_roi(feat_roi_src.flatten(1))
-                feat_roi_tgt = self.gpa_layer_roi(feat_roi_tgt.flatten(1))
-                feat_rcnn_src = self.gpa_layer_rcnn(feat_rcnn_src)
-                feat_rcnn_tgt = self.gpa_layer_rcnn(feat_rcnn_tgt)
-            elif self.gpa_layer in ['avgpool', 'maxpool']:
-                feat_roi_src = self.gpa_layer_roi(feat_roi_src.flatten(1).unsqueeze(1)).squeeze(1)
-                feat_roi_tgt = self.gpa_layer_roi(feat_roi_tgt.flatten(1).unsqueeze(1)).squeeze(1)
-                feat_rcnn_src = self.gpa_layer_rcnn(feat_rcnn_src.unsqueeze(1)).squeeze(1)
-                feat_rcnn_tgt = self.gpa_layer_rcnn(feat_rcnn_tgt.unsqueeze(1)).squeeze(1)
-            elif self.gpa_layer is None:
-                feat_roi_src = feat_roi_src.flatten(1)
-                feat_roi_tgt = feat_roi_tgt.flatten(1)
-                feat_rcnn_src = feat_rcnn_src
-                feat_rcnn_tgt = feat_rcnn_tgt
-
-            # compute intra-class and inter-class loss after ROI and RCNN
-            roi_intra = self.gpa_cfg.get('loss_roi_intra', 1.0)
-            roi_inter = self.gpa_cfg.get('loss_roi_inter', 1.0)
-            rcnn_intra = self.gpa_cfg.get('loss_rcnn_intra', 1.0)
-            rcnn_inter = self.gpa_cfg.get('loss_rcnn_inter', 1.0)
-            
-            roi_loss_intra, roi_loss_inter = self._gpa_loss(feat_roi_src, cls_score_src, rois_src, gt_bboxes, gt_labels, feat_roi_tgt, cls_score_tgt, rois_tgt, gt_bboxes_tgt, gt_labels_tgt, batch_size)
-            losses.update({'roi_loss_intra': roi_loss_intra * roi_intra})
-            losses.update({'roi_loss_inter': roi_loss_inter * roi_inter})
-
-            rcnn_loss_intra, rcnn_loss_inter = self._gpa_loss(feat_rcnn_src, cls_score_src, rois_src, gt_bboxes, gt_labels, feat_rcnn_tgt, cls_score_tgt, rois_tgt, gt_bboxes_tgt, gt_labels_tgt, batch_size)
-            losses.update({'rcnn_loss_intra': rcnn_loss_intra * rcnn_intra})
-            losses.update({'rcnn_loss_inter': rcnn_loss_inter * rcnn_inter})
-
+    def _balance_losses(self, losses):
+        """Use this to rebalance faster-RCNN losses when using automatic loss-balancing"""
         return losses
 
     async def async_simple_test(self,
