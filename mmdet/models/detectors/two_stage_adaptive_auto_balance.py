@@ -9,10 +9,8 @@ from .two_stage_adaptive import TwoStageDetectorAdaptive
 
 @DETECTORS.register_module()
 class TwoStageDetectorAdaptiveAutoBalance(TwoStageDetectorAdaptive):
-    """Base class for two-stage detectors with domain adaptation.
-
-    Two-stage detectors typically consisting of a region proposal network and a
-    task-specific regression head.
+    """Two-stage detectors with domain adaptation using the Method in
+    [Liebel and Körner, “Auxiliary Tasks in Multi-Task Learning.”] to automatically balance multi-task losses.
     """
 
     def __init__(self,
@@ -34,7 +32,7 @@ class TwoStageDetectorAdaptiveAutoBalance(TwoStageDetectorAdaptive):
             self.coeff_rcnn_inter = nn.Parameter(torch.ones(1) * 0.2, requires_grad=True)
 
     def _loss_coeff(self, a):
-        """The actual coefficient of each loss is 1/(2*param²), where param is the learnable parameter."""
+        """The actual coefficient of each loss is 1/(2·param²), where param is the learnable parameter."""
         return 1 / (2 * torch.pow(a, 2))
 
     def _loss_penalty(self, a):
@@ -60,16 +58,16 @@ class TwoStageDetectorAdaptiveAutoBalance(TwoStageDetectorAdaptive):
              + self._loss_penalty(self.coeff_faster_rcnn)
         losses.update({'penalty': penalty})
 
-        print('DEBUG INFO', end=': ')
-        print('ROI intra:', roi_loss_intra.item(), end=', ')
-        print('ROI inter:', roi_loss_inter.item(), end=', ')
-        print('RCNN intra:', rcnn_loss_intra.item(), end=', ')
-        print('RCNN inter:', rcnn_loss_inter.item(), end=', ')
-        print('w old:', self._loss_coeff(self.coeff_faster_rcnn).item(), end=', ')
-        print('w ROI intra:', self._loss_coeff(self.coeff_roi_intra).item(), end=', ')
-        print('w ROI inter:', self._loss_coeff(self.coeff_roi_inter).item(), end=', ')
-        print('w RCNN intra:', self._loss_coeff(self.coeff_rcnn_intra).item(), end=', ')
-        print('w RCNN inter:', self._loss_coeff(self.coeff_rcnn_inter).item())
+        print('DEBUG INFO:', \
+            f'ROI intra: {roi_loss_intra.item()},', \
+            f'ROI inter: {roi_loss_inter.item()},', \
+            f'RCNN intra: {rcnn_loss_intra.item()},', \
+            f'RCNN inter: {rcnn_loss_inter.item()},', \
+            f'w old: {self._loss_coeff(self.coeff_faster_rcnn).item()},', \
+            f'w ROI intra: {self._loss_coeff(self.coeff_roi_intra).item()},', \
+            f'w ROI inter: {self._loss_coeff(self.coeff_roi_inter).item()},', \
+            f'w RCNN intra: {self._loss_coeff(self.coeff_rcnn_intra).item()},', \
+            f'w RCNN inter: {self._loss_coeff(self.coeff_rcnn_inter).item()}')
 
         return losses
     
@@ -80,4 +78,4 @@ class TwoStageDetectorAdaptiveAutoBalance(TwoStageDetectorAdaptive):
                 _losses.update({key: [v * self._loss_coeff(self.coeff_faster_rcnn) for v in value]})
             else:
                 _losses.update({key: value * self._loss_coeff(self.coeff_faster_rcnn)})
-        return losses
+        return _losses

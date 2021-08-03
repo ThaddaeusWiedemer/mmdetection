@@ -213,7 +213,7 @@ data = dict(
 
 # training and optimizer
 # fine-tuning: smaller lr, freeze FPN (neck), freeze RPN
-evaluation = dict(interval=5, metric='bbox')
+evaluation = dict(interval=5, save_best='bbox_mAP_50', metric='bbox')
 optimizer = dict(
     type='SGD',
     lr=0.001,
@@ -225,6 +225,7 @@ optimizer = dict(
     #         'neck': dict(lr_mult=0.0),
     #         'rpn_head.cls_convs': dict(lr_mult=0.0)
     #     }))
+    # paramwise_cfg=dict(custom_keys=dict({'gpa_layer_roi': dict(lr_mult=0.1), 'gpa_layer_rcnn': dict(lr_mult=0.1)}))
     )
 optimizer_config = dict(grad_clip=None)
 lr_config = dict(

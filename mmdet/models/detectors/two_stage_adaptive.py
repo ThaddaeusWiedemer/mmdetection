@@ -42,7 +42,6 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
-        self.gpa_cfg = train_cfg.get('gpa', None)
 
         if roi_head is not None:
             # update train and test cfg here for now
@@ -53,30 +52,37 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
             roi_head.pretrained = pretrained
             self.roi_head = build_head(roi_head)
 
-            if self.gpa_cfg is not None:
-                # layers for GPA heads
-                roi_out_size = roi_head['bbox_roi_extractor']['roi_layer']['output_size']
-                roi_out_size *= roi_out_size
-                roi_out_size *= roi_head['bbox_roi_extractor']['out_channels']
+            if self.train_cfg is not None:
+                self.gpa_cfg = train_cfg.get('gpa', None)
 
-                self.gpa_layer = self.gpa_cfg.get('fc_layer', 'fc_layer')
-                assert self.gpa_layer in ['fc_layer', 'avgpool', 'maxpool', 'none']
+                if self.gpa_cfg is not None:
+                    # layers for GPA heads
+                    roi_out_size = roi_head['bbox_roi_extractor']['roi_layer']['output_size']
+                    roi_out_size *= roi_out_size
+                    roi_out_size *= roi_head['bbox_roi_extractor']['out_channels']
 
-                if self.gpa_layer == 'fc_layer':
-                    self.gpa_layer_roi = nn.Linear(roi_out_size, 128)
-                    self.gpa_layer_rcnn = nn.Linear(roi_head['bbox_head']['fc_out_channels'], 64)
-                elif self.gpa_layer == 'avgpool':
-                    # reduce 256*7*7 to 128: 
-                    self.gpa_layer_roi = nn.AvgPool1d(98)
-                    # reduce 1024 to 64
-                    self.gpa_layer_rcnn = nn.AvgPool1d(16)
-                elif self.gpa_layer == 'maxpool':
-                    # reduce 256*7*7 to 128: 
-                    self.gpa_layer_roi = nn.MaxPool1d(98)
-                    # reduce 1024 to 64
-                    self.gpa_layer_rcnn = nn.MaxPool1d(16)
-                elif self.gpa_layer == 'none':
-                    pass
+                    self.gpa_layer = self.gpa_cfg.get('fc_layer', 'fc_layer')
+                    assert self.gpa_layer in ['fc_layer', 'fc_layer_roi', 'fc_layer_rcnn', 'avgpool', 'maxpool', 'none']
+
+                    if 'fc_layer' in self.gpa_layer:
+                        # interpret 'fc_layer' as fc-layer for both, but 'fc_layer_roi' as fc-layer only for ROI and vice-
+                        # versa
+                        if 'rcnn' not in self.gpa_layer:
+                            self.gpa_layer_roi = nn.Linear(roi_out_size, 128)
+                        if 'roi' not in self.gpa_layer:
+                            self.gpa_layer_rcnn = nn.Linear(roi_head['bbox_head']['fc_out_channels'], 64)
+                    elif self.gpa_layer == 'avgpool':
+                        # reduce 256*7*7 to 128: 
+                        self.gpa_layer_roi = nn.AvgPool1d(98)
+                        # reduce 1024 to 64
+                        self.gpa_layer_rcnn = nn.AvgPool1d(16)
+                    elif self.gpa_layer == 'maxpool':
+                        # reduce 256*7*7 to 128: 
+                        self.gpa_layer_roi = nn.MaxPool1d(98)
+                        # reduce 1024 to 64
+                        self.gpa_layer_rcnn = nn.MaxPool1d(16)
+                    elif self.gpa_layer == 'none':
+                        pass
 
     @property
     def with_rpn(self):
@@ -216,11 +222,20 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
             # the dimensions of the features are
             #   ROI:  (samples_per_gpu * roi_sampler_num, roi_out_channels, roi_output_size, roi_output_size)
             #   RCNN: (samples_per_gpu * roi_sampler_num, head_fc_out_channels)
-            if self.gpa_layer == 'fc_layer':
-                feat_roi_src = self.gpa_layer_roi(feat_roi_src.flatten(1))
-                feat_roi_tgt = self.gpa_layer_roi(feat_roi_tgt.flatten(1))
-                feat_rcnn_src = self.gpa_layer_rcnn(feat_rcnn_src)
-                feat_rcnn_tgt = self.gpa_layer_rcnn(feat_rcnn_tgt)
+            if 'fc_layer' in self.gpa_layer:
+                # interpret 'fc_layer' as fc-layer for both, but 'fc_layer_roi' as fc-layer only for ROI and vice-versa
+                if 'rcnn' in self.gpa_layer:
+                    feat_roi_src = feat_roi_src.flatten(1)
+                    feat_roi_tgt = feat_roi_tgt.flatten(1)
+                else:
+                    feat_roi_src = self.gpa_layer_roi(feat_roi_src.flatten(1))
+                    feat_roi_tgt = self.gpa_layer_roi(feat_roi_tgt.flatten(1))
+                if 'roi' in self.gpa_layer:
+                    feat_rcnn_src = feat_rcnn_src
+                    feat_rcnn_tgt = feat_rcnn_tgt
+                else:
+                    feat_rcnn_src = self.gpa_layer_rcnn(feat_rcnn_src)
+                    feat_rcnn_tgt = self.gpa_layer_rcnn(feat_rcnn_tgt)
             elif self.gpa_layer in ['avgpool', 'maxpool']:
                 feat_roi_src = self.gpa_layer_roi(feat_roi_src.flatten(1).unsqueeze(1)).squeeze(1)
                 feat_roi_tgt = self.gpa_layer_roi(feat_roi_tgt.flatten(1).unsqueeze(1)).squeeze(1)
@@ -236,7 +251,8 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
             roi_loss_intra, roi_loss_inter = self._gpa_loss(feat_roi_src, cls_score_src, rois_src, gt_bboxes, gt_labels, feat_roi_tgt, cls_score_tgt, rois_tgt, gt_bboxes_tgt, gt_labels_tgt, batch_size)
             rcnn_loss_intra, rcnn_loss_inter = self._gpa_loss(feat_rcnn_src, cls_score_src, rois_src, gt_bboxes, gt_labels, feat_rcnn_tgt, cls_score_tgt, rois_tgt, gt_bboxes_tgt, gt_labels_tgt, batch_size)
 
-            losses.update(self._gpa_balance_losses(roi_loss_intra, roi_loss_inter, rcnn_loss_intra, rcnn_loss_inter))            
+            gpa_losses = self._gpa_balance_losses(roi_loss_intra, roi_loss_inter, rcnn_loss_intra, rcnn_loss_inter)
+            losses.update(gpa_losses)            
 
         return losses
     
@@ -411,8 +427,11 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                         tmp_batch_feat = torch.div(tmp_batch_feat, weight_sum)
                         tmp_batch_weight = torch.div(tmp_batch_weight, weight_sum)
 
-                tmp_feat.append(tmp_batch_feat)
-                tmp_weight.append(tmp_batch_weight)
+                    tmp_feat.append(tmp_batch_feat)
+                    tmp_weight.append(tmp_batch_weight)
+                else:
+                    tmp_feat.append(tmp_batch_feat_)
+                    tmp_weight.append(tmp_batch_weight_)
 
             tmp_class_feat_ = torch.stack(tmp_feat, dim = 0)
             tmp_class_weight = torch.stack(tmp_weight, dim = 0)
@@ -440,8 +459,11 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                         tmp_tgt_batch_feat = torch.div(tmp_tgt_batch_feat, weight_sum)
                         tmp_tgt_batch_weight = torch.div(tmp_tgt_batch_weight, weight_sum)
 
-                tmp_tgt_feat.append(tmp_tgt_batch_feat)
-                tmp_tgt_weight.append(tmp_tgt_batch_weight)
+                    tmp_tgt_feat.append(tmp_tgt_batch_feat)
+                    tmp_tgt_weight.append(tmp_tgt_batch_weight)
+                else:
+                    tmp_tgt_feat.append(tmp_tgt_batch_feat_)
+                    tmp_tgt_weight.append(tmp_tgt_batch_weight_)
 
             # build prototypes from all samples in batch. results doesn't have batch dimension
             tmp_tgt_class_feat_ = torch.stack(tmp_tgt_feat, dim = 0)
