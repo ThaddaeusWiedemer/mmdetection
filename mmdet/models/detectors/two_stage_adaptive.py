@@ -14,7 +14,6 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
     Two-stage detectors typically consisting of a region proposal network and a
     task-specific regression head.
     """
-
     def __init__(self,
                  backbone,
                  neck=None,
@@ -26,8 +25,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                  init_cfg=None):
         super(TwoStageDetectorAdaptive, self).__init__(init_cfg)
         if pretrained:
-            warnings.warn('DeprecationWarning: pretrained is deprecated, '
-                          'please use "init_cfg" instead')
+            warnings.warn('DeprecationWarning: pretrained is deprecated, ' 'please use "init_cfg" instead')
             backbone.pretrained = pretrained
         self.backbone = build_backbone(backbone)
 
@@ -39,7 +37,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
             rpn_head_ = rpn_head.copy()
             rpn_head_.update(train_cfg=rpn_train_cfg, test_cfg=test_cfg.rpn)
             self.rpn_head = build_head(rpn_head_)
-        
+
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
 
@@ -72,12 +70,12 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                         if 'roi' not in self.gpa_layer:
                             self.gpa_layer_rcnn = nn.Linear(roi_head['bbox_head']['fc_out_channels'], 64)
                     elif self.gpa_layer == 'avgpool':
-                        # reduce 256*7*7 to 128: 
+                        # reduce 256*7*7 to 128:
                         self.gpa_layer_roi = nn.AvgPool1d(98)
                         # reduce 1024 to 64
                         self.gpa_layer_rcnn = nn.AvgPool1d(16)
                     elif self.gpa_layer == 'maxpool':
-                        # reduce 256*7*7 to 128: 
+                        # reduce 256*7*7 to 128:
                         self.gpa_layer_roi = nn.MaxPool1d(98)
                         # reduce 1024 to 64
                         self.gpa_layer_rcnn = nn.MaxPool1d(16)
@@ -118,7 +116,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         roi_outs = self.roi_head.forward_dummy(x, proposals)
         outs = outs + (roi_outs, )
         return outs
-    
+
     def forward_train(self,
                       img,
                       img_metas,
@@ -180,24 +178,21 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
 
         # RPN forward and loss in both domains
         if self.with_rpn:
-            proposal_cfg = self.train_cfg.get('rpn_proposal',
-                                              self.test_cfg.rpn)
-            rpn_losses_src, proposal_list_src = self.rpn_head.forward_train(
-                x_src,
-                img_metas,
-                gt_bboxes,
-                gt_labels=None,
-                gt_bboxes_ignore=gt_bboxes_ignore,
-                proposal_cfg=proposal_cfg)
-            rpn_losses_tgt, proposal_list_tgt = self.rpn_head.forward_train(
-                x_tgt,
-                img_metas_tgt,
-                gt_bboxes_tgt,
-                gt_labels_tgt=None,
-                gt_bboxes_ignore=gt_bboxes_ignore,
-                proposal_cfg=proposal_cfg)
+            proposal_cfg = self.train_cfg.get('rpn_proposal', self.test_cfg.rpn)
+            rpn_losses_src, proposal_list_src = self.rpn_head.forward_train(x_src,
+                                                                            img_metas,
+                                                                            gt_bboxes,
+                                                                            gt_labels=None,
+                                                                            gt_bboxes_ignore=gt_bboxes_ignore,
+                                                                            proposal_cfg=proposal_cfg)
+            rpn_losses_tgt, proposal_list_tgt = self.rpn_head.forward_train(x_tgt,
+                                                                            img_metas_tgt,
+                                                                            gt_bboxes_tgt,
+                                                                            gt_labels_tgt=None,
+                                                                            gt_bboxes_ignore=gt_bboxes_ignore,
+                                                                            proposal_cfg=proposal_cfg)
             # we only want to improve on the target domain
-            losses.update(self._balance_losses(rpn_losses_tgt)) # RPN_loss_cls + RPN_loss_bbox
+            losses.update(self._balance_losses(rpn_losses_tgt))  # RPN_loss_cls + RPN_loss_bbox
         else:
             raise NotImplementedError('Two stage domain-adaptive detector only works with RPN for now')
             proposal_list = proposals
@@ -208,7 +203,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         roi_losses_tgt, rois_tgt, feat_roi_tgt, feat_rcnn_tgt, cls_score_tgt = self.roi_head.forward_train(
             x_tgt, img_metas_tgt, proposal_list_tgt, gt_bboxes_tgt, gt_labels_tgt, gt_bboxes_ignore, gt_masks, **kwargs)
         # we only want to improve on the target domain
-        losses.update(self._balance_losses(roi_losses_tgt)) # RCNN_loss_cls + RCNN_loss_bbox
+        losses.update(self._balance_losses(roi_losses_tgt))  # RCNN_loss_cls + RCNN_loss_bbox
 
         # adapting on features after ROI and after RCNN only makes a difference when the ROI-head has shared
         # layers
@@ -248,27 +243,31 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                 feat_rcnn_tgt = feat_rcnn_tgt
 
             # compute intra-class and inter-class loss after ROI and RCNN
-            roi_loss_intra, roi_loss_inter = self._gpa_loss(feat_roi_src, cls_score_src, rois_src, gt_bboxes, gt_labels, feat_roi_tgt, cls_score_tgt, rois_tgt, gt_bboxes_tgt, gt_labels_tgt, batch_size)
-            rcnn_loss_intra, rcnn_loss_inter = self._gpa_loss(feat_rcnn_src, cls_score_src, rois_src, gt_bboxes, gt_labels, feat_rcnn_tgt, cls_score_tgt, rois_tgt, gt_bboxes_tgt, gt_labels_tgt, batch_size)
+            roi_loss_intra, roi_loss_inter = self._gpa_loss(feat_roi_src, cls_score_src, rois_src, gt_bboxes, gt_labels,
+                                                            feat_roi_tgt, cls_score_tgt, rois_tgt, gt_bboxes_tgt,
+                                                            gt_labels_tgt, batch_size)
+            rcnn_loss_intra, rcnn_loss_inter = self._gpa_loss(feat_rcnn_src, cls_score_src, rois_src, gt_bboxes,
+                                                              gt_labels, feat_rcnn_tgt, cls_score_tgt, rois_tgt,
+                                                              gt_bboxes_tgt, gt_labels_tgt, batch_size)
 
             gpa_losses = self._gpa_balance_losses(roi_loss_intra, roi_loss_inter, rcnn_loss_intra, rcnn_loss_inter)
-            losses.update(gpa_losses)            
+            losses.update(gpa_losses)
 
         return losses
-    
+
     def _gpa_distance(self, feat_a, feat_b):
         """use this to compute distances between features for this loss"""
         distances = ['mean_squared', 'euclidean', 'cosine']
         distance = self.gpa_cfg.get('distance', 'mean_squared')
         assert distance in distances, f'distance for GPA must be one of {distances}, but got {distance}'
-        
+
         if distance == 'mean_squared':
             return torch.pow(feat_a - feat_b, 2.0).mean()
         if distance == 'euclidean':
             return torch.pow(feat_a - feat_b, 2.0).sum().sqrt()
         cos = nn.CosineSimilarity(dim=0)
         return 1 - cos(feat_a, feat_b)
-    
+
     def _gpa_get_adj(self, rois, epsilon=1e-6):
         """use this to calculate adjacency matrix of region proposals based on IoU
         
@@ -285,28 +284,28 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         # x_max_ab of the overlap of a and b is min{x_max_a, x_max_b}
         # same for y
         # these values can be computed for all pairs (a,b) at the same time using matrices
-        x_min = rois[:,1]
+        x_min = rois[:, 1]
         x_min_copy = torch.stack([x_min] * rois.size(0), dim=0)
-        x_min_copy_ = x_min_copy.permute((1,0))
+        x_min_copy_ = x_min_copy.permute((1, 0))
         x_min_matrix = torch.max(torch.stack([x_min_copy, x_min_copy_], dim=-1), dim=-1)[0]
-        x_max = rois[:,3]
+        x_max = rois[:, 3]
         x_max_copy = torch.stack([x_max] * rois.size(0), dim=0)
         x_max_copy_ = x_max_copy.permute((1, 0))
         x_max_matrix = torch.min(torch.stack([x_max_copy, x_max_copy_], dim=-1), dim=-1)[0]
-        y_min = rois[:,2]
+        y_min = rois[:, 2]
         y_min_copy = torch.stack([y_min] * rois.size(0), dim=0)
         y_min_copy_ = y_min_copy.permute((1, 0))
         y_min_matrix = torch.max(torch.stack([y_min_copy, y_min_copy_], dim=-1), dim=-1)[0]
-        y_max = rois[:,4]
+        y_max = rois[:, 4]
         y_max_copy = torch.stack([y_max] * rois.size(0), dim=0)
         y_max_copy_ = y_max_copy.permute((1, 0))
         y_max_matrix = torch.min(torch.stack([y_max_copy, y_max_copy_], dim=-1), dim=-1)[0]
-        
-        w = torch.max(torch.stack([(x_max_matrix - x_min_matrix), torch.zeros_like(x_min_matrix)], dim = -1), dim = -1)[0]
-        h = torch.max(torch.stack([(y_max_matrix - y_min_matrix), torch.zeros_like(y_min_matrix)], dim = -1), dim = -1)[0]
+
+        w = torch.max(torch.stack([(x_max_matrix - x_min_matrix), torch.zeros_like(x_min_matrix)], dim=-1), dim=-1)[0]
+        h = torch.max(torch.stack([(y_max_matrix - y_min_matrix), torch.zeros_like(y_min_matrix)], dim=-1), dim=-1)[0]
         intersection = w * h
-        area_copy = torch.stack([area] * rois.size(0), dim = 0)
-        area_copy_ = area_copy.permute((1,0))
+        area_copy = torch.stack([area] * rois.size(0), dim=0)
+        area_copy_ = area_copy.permute((1, 0))
         area_sum = area_copy + area_copy_
         union = area_sum - intersection
         iou = intersection / union
@@ -318,7 +317,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         assert iou.diagonal().numel() - iou.diagonal().nonzero().size(0) == 0, 'some diagonal entries were 0'
 
         return iou
-    
+
     def _gpa_get_adj_gt(self, rois, gts, epsilon=1e-6):
         """calculate adjacency matrix between ROIs and ground truth bboxes
         
@@ -339,30 +338,30 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         area_gts = area_gts + (area_gts == 0).float() * epsilon
 
         # compute iou as in get_adj()
-        x_min_rois = torch.stack([rois[:,1]] * gts.size(0), dim=0)
-        x_min_gts = torch.stack([gts[:,0]] * rois.size(0), dim=0).permute((1,0))
+        x_min_rois = torch.stack([rois[:, 1]] * gts.size(0), dim=0)
+        x_min_gts = torch.stack([gts[:, 0]] * rois.size(0), dim=0).permute((1, 0))
         x_min_matrix = torch.max(torch.stack([x_min_rois, x_min_gts], dim=-1), dim=-1)[0]
-        x_max_rois = torch.stack([rois[:,3]] * gts.size(0), dim=0)
-        x_max_gts = torch.stack([gts[:,2]] * rois.size(0), dim=0).permute((1,0))
+        x_max_rois = torch.stack([rois[:, 3]] * gts.size(0), dim=0)
+        x_max_gts = torch.stack([gts[:, 2]] * rois.size(0), dim=0).permute((1, 0))
         x_max_matrix = torch.min(torch.stack([x_max_rois, x_max_gts], dim=-1), dim=-1)[0]
-        y_min_rois = torch.stack([rois[:,2]] * gts.size(0), dim=0)
-        y_min_gts = torch.stack([gts[:,1]] * rois.size(0), dim=0).permute((1,0))
+        y_min_rois = torch.stack([rois[:, 2]] * gts.size(0), dim=0)
+        y_min_gts = torch.stack([gts[:, 1]] * rois.size(0), dim=0).permute((1, 0))
         y_min_matrix = torch.max(torch.stack([y_min_rois, y_min_gts], dim=-1), dim=-1)[0]
-        y_max_rois = torch.stack([rois[:,4]] * gts.size(0), dim=0)
-        y_max_gts = torch.stack([gts[:,3]] * rois.size(0), dim=0).permute((1,0))
+        y_max_rois = torch.stack([rois[:, 4]] * gts.size(0), dim=0)
+        y_max_gts = torch.stack([gts[:, 3]] * rois.size(0), dim=0).permute((1, 0))
         y_max_matrix = torch.min(torch.stack([y_max_rois, y_max_gts], dim=-1), dim=-1)[0]
 
-        w = torch.max(torch.stack([(x_max_matrix - x_min_matrix), torch.zeros_like(x_min_matrix)], dim = -1), dim = -1)[0]
-        h = torch.max(torch.stack([(y_max_matrix - y_min_matrix), torch.zeros_like(y_min_matrix)], dim = -1), dim = -1)[0]
+        w = torch.max(torch.stack([(x_max_matrix - x_min_matrix), torch.zeros_like(x_min_matrix)], dim=-1), dim=-1)[0]
+        h = torch.max(torch.stack([(y_max_matrix - y_min_matrix), torch.zeros_like(y_min_matrix)], dim=-1), dim=-1)[0]
         intersection = w * h
-        _area_rois = torch.stack([area_rois] * gts.size(0), dim = 0)
-        _area_gts = torch.stack([area_gts] * rois.size(0), dim = 0).permute((1,0))
+        _area_rois = torch.stack([area_rois] * gts.size(0), dim=0)
+        _area_gts = torch.stack([area_gts] * rois.size(0), dim=0).permute((1, 0))
         area_sum = _area_rois + _area_gts
         union = area_sum - intersection
         iou = intersection / union
 
         return iou
-    
+
     def _gpa_inter_class_loss(self, feat_a, feat_b, margin=1.):
         # could use F.relu to write more concisely
         out = torch.pow((margin - torch.sqrt(self._gpa_distance(feat_a, feat_b))) / margin, 2) \
@@ -370,18 +369,18 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         return out
 
     def _gpa_loss(self,
-                feat,
-                cls_prob,
-                rois,
-                gt_bboxes,
-                gt_labels,
-                feat_tgt,
-                cls_prob_tgt,
-                rois_tgt,
-                gt_bboxes_tgt,
-                gt_labels_tgt,
-                batch_size,
-                epsilon=1e-6):
+                  feat,
+                  cls_prob,
+                  rois,
+                  gt_bboxes,
+                  gt_labels,
+                  feat_tgt,
+                  cls_prob_tgt,
+                  rois_tgt,
+                  gt_bboxes_tgt,
+                  gt_labels_tgt,
+                  batch_size,
+                  epsilon=1e-6):
         """Graph-based prototpye daptation loss as in https://github.com/ChrisAllenMing/GPA-detection.
         """
         use_graph = self.gpa_cfg.get('use_graph', True)
@@ -403,7 +402,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
 
         num_classes = cls_prob.size(2)
         class_ptt = list()
-        tgt_class_feat = list()
+        tgt_class_ptt = list()
 
         for i in range(num_classes):
             tmp_cls_prob = cls_prob[:, :, i].view(cls_prob.size(0), cls_prob.size(1), 1)
@@ -420,7 +419,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                     tmp_batch_adj = self._gpa_get_adj(rois[j, :, :])
                     tmp_batch_feat = torch.mm(tmp_batch_adj, tmp_batch_feat_)
                     tmp_batch_weight = torch.mm(tmp_batch_adj, tmp_batch_weight_)
-                    
+
                     # divide by sum of edge weights as in paper
                     if normalize:
                         weight_sum = tmp_batch_adj.sum(dim=1).unsqueeze(1)
@@ -433,20 +432,21 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                     tmp_feat.append(tmp_batch_feat_)
                     tmp_weight.append(tmp_batch_weight_)
 
-            tmp_class_feat_ = torch.stack(tmp_feat, dim = 0)
-            tmp_class_weight = torch.stack(tmp_weight, dim = 0)
-            tmp_class_feat = torch.sum(torch.sum(tmp_class_feat_, dim=1), dim = 0) / (torch.sum(tmp_class_weight) + epsilon)
+            tmp_class_feat_ = torch.stack(tmp_feat, dim=0)
+            tmp_class_weight = torch.stack(tmp_weight, dim=0)
+            tmp_class_feat = torch.sum(torch.sum(tmp_class_feat_, dim=1),
+                                       dim=0) / (torch.sum(tmp_class_weight) + epsilon)
             class_ptt.append(tmp_class_feat)
 
             tmp_tgt_cls_prob = cls_prob_tgt[:, :, i].view(cls_prob_tgt.size(0), cls_prob_tgt.size(1), 1)
-            tmp_tgt_class_feat = feat_tgt * tmp_tgt_cls_prob
+            tmp_tgt_class_ptt = feat_tgt * tmp_tgt_cls_prob
             tmp_tgt_feat = list()
             tmp_tgt_weight = list()
 
             for j in range(batch_size):
-                tmp_tgt_batch_feat_ = tmp_tgt_class_feat[j, :, :]
+                tmp_tgt_batch_feat_ = tmp_tgt_class_ptt[j, :, :]
                 tmp_tgt_batch_weight_ = tmp_tgt_cls_prob[j, :, :]
-                
+
                 if use_graph:
                     # graph-based aggregation
                     tmp_tgt_batch_adj = self._gpa_get_adj(rois_tgt[j, :, :])
@@ -466,13 +466,14 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                     tmp_tgt_weight.append(tmp_tgt_batch_weight_)
 
             # build prototypes from all samples in batch. results doesn't have batch dimension
-            tmp_tgt_class_feat_ = torch.stack(tmp_tgt_feat, dim = 0)
-            tmp_tgt_class_weight = torch.stack(tmp_tgt_weight, dim = 0)
-            tmp_tgt_class_feat = torch.sum(torch.sum(tmp_tgt_class_feat_, dim=1), dim = 0) / (torch.sum(tmp_tgt_class_weight) + epsilon)
-            tgt_class_feat.append(tmp_tgt_class_feat)
+            tmp_tgt_class_ptt_ = torch.stack(tmp_tgt_feat, dim=0)
+            tmp_tgt_class_weight = torch.stack(tmp_tgt_weight, dim=0)
+            tmp_tgt_class_ptt = torch.sum(torch.sum(tmp_tgt_class_ptt_, dim=1),
+                                          dim=0) / (torch.sum(tmp_tgt_class_weight) + epsilon)
+            tgt_class_ptt.append(tmp_tgt_class_ptt)
 
-        class_ptt = torch.stack(class_ptt, dim = 0)
-        tgt_class_feat = torch.stack(tgt_class_feat, dim = 0)
+        class_ptt = torch.stack(class_ptt, dim=0)
+        tgt_class_ptt = torch.stack(tgt_class_ptt, dim=0)
 
         # get the intra-class and inter-class adaptation loss
         loss_intra = 0
@@ -480,15 +481,15 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
 
         for i in range(num_classes):
             tmp_src_feat_1 = class_ptt[i, :]
-            tmp_tgt_feat_1 = tgt_class_feat[i, :]
+            tmp_tgt_feat_1 = tgt_class_ptt[i, :]
 
             # intra-class loss is just distance of features
             loss_intra = loss_intra + self._gpa_distance(tmp_src_feat_1, tmp_tgt_feat_1)
 
             # inter-class loss is distance between all 4 source-target pairs
-            for j in range(i+1, num_classes):
+            for j in range(i + 1, num_classes):
                 tmp_src_feat_2 = class_ptt[j, :]
-                tmp_tgt_feat_2 = tgt_class_feat[j, :]
+                tmp_tgt_feat_2 = tgt_class_ptt[j, :]
 
                 loss_inter = loss_inter + self._gpa_inter_class_loss(tmp_src_feat_1, tmp_src_feat_2)
                 loss_inter = loss_inter + self._gpa_inter_class_loss(tmp_tgt_feat_1, tmp_tgt_feat_2)
@@ -510,7 +511,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         #     batch_feat = torch.mm(batch_adj, batch_feat) # these are the instance prototypes for 1 image
         #     batch_feat = batch_feat.mean(dim=0) # this is the class prototype for 1 image
         #     class_ptts.append(batch_feat)
-            
+
         #     batch_feat_tgt = feat_tgt[j, :, :]
         #     batch_adj_tgt = self._gpa_get_adj_gt(rois_tgt[j, :, :], gt_bboxes_tgt[j])
         #     batch_feat_tgt = torch.mm(batch_adj_tgt, batch_feat_tgt)
@@ -518,7 +519,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         #     class_ptts_tgt.append(batch_feat_tgt)
 
         # # aggregate over batch to get final class prototype
-        # class_ptt = torch.stack(class_ptts, dim=0).mean(dim=0) 
+        # class_ptt = torch.stack(class_ptts, dim=0).mean(dim=0)
         # class_ptt_tgt = torch.stack(class_ptts_tgt, dim=0).mean(dim=0)
 
         # loss_intra_gt = self._gpa_distance(class_ptt, class_ptt_tgt, d)
@@ -549,23 +550,17 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         """Use this to rebalance faster-RCNN losses when using automatic loss-balancing"""
         return losses
 
-    async def async_simple_test(self,
-                                img,
-                                img_meta,
-                                proposals=None,
-                                rescale=False):
+    async def async_simple_test(self, img, img_meta, proposals=None, rescale=False):
         """Async test without augmentation."""
         assert self.with_bbox, 'Bbox head must be implemented.'
         x = self.extract_feat(img)
 
         if proposals is None:
-            proposal_list = await self.rpn_head.async_simple_test_rpn(
-                x, img_meta)
+            proposal_list = await self.rpn_head.async_simple_test_rpn(x, img_meta)
         else:
             proposal_list = proposals
 
-        return await self.roi_head.async_simple_test(
-            x, proposal_list, img_meta, rescale=rescale)
+        return await self.roi_head.async_simple_test(x, proposal_list, img_meta, rescale=rescale)
 
     def simple_test(self, img, img_metas, proposals=None, rescale=False):
         """Test without augmentation."""
@@ -577,8 +572,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         else:
             proposal_list = proposals
 
-        return self.roi_head.simple_test(
-            x, proposal_list, img_metas, rescale=rescale)
+        return self.roi_head.simple_test(x, proposal_list, img_metas, rescale=rescale)
 
     def aug_test(self, imgs, img_metas, rescale=False):
         """Test with augmentations.
@@ -588,8 +582,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         """
         x = self.extract_feats(imgs)
         proposal_list = self.rpn_head.aug_test_rpn(x, img_metas)
-        return self.roi_head.aug_test(
-            x, proposal_list, img_metas, rescale=rescale)
+        return self.roi_head.aug_test(x, proposal_list, img_metas, rescale=rescale)
 
     def onnx_export(self, img, img_metas):
 

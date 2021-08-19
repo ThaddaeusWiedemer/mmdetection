@@ -30,6 +30,7 @@ from .sparse_rcnn import SparseRCNN
 from .trident_faster_rcnn import TridentFasterRCNN
 from .two_stage import TwoStageDetector
 from .two_stage_adaptive import TwoStageDetectorAdaptive
+from .two_stage_adaptive_adversarial import TwoStageDetectorAdaptiveAdversarial
 from .two_stage_adaptive_auto_balance import TwoStageDetectorAdaptiveAutoBalance
 from .vfnet import VFNet
 from .yolact import YOLACT
@@ -38,11 +39,9 @@ from .yolof import YOLOF
 
 __all__ = [
     'ATSS', 'BaseDetector', 'SingleStageDetector', 'TwoStageDetector', 'RPN',
-    'KnowledgeDistillationSingleStageDetector', 'FastRCNN', 'FasterRCNN',
-    'MaskRCNN', 'CascadeRCNN', 'HybridTaskCascade', 'RetinaNet', 'FCOS',
-    'GridRCNN', 'MaskScoringRCNN', 'RepPointsDetector', 'FOVEA', 'FSAF',
-    'NASFCOS', 'PointRend', 'GFL', 'CornerNet', 'PAA', 'YOLOV3', 'YOLACT',
-    'VFNet', 'DETR', 'TridentFasterRCNN', 'SparseRCNN', 'SCNet',
-    'DeformableDETR', 'AutoAssign', 'YOLOF', 'CenterNet', 'BaseDetectorAdaptive',
-    'TwoStageDetectorAdaptive', 'TwoStageDetectorAdaptiveAutoBalance'
+    'KnowledgeDistillationSingleStageDetector', 'FastRCNN', 'FasterRCNN', 'MaskRCNN', 'CascadeRCNN',
+    'HybridTaskCascade', 'RetinaNet', 'FCOS', 'GridRCNN', 'MaskScoringRCNN', 'RepPointsDetector', 'FOVEA', 'FSAF',
+    'NASFCOS', 'PointRend', 'GFL', 'CornerNet', 'PAA', 'YOLOV3', 'YOLACT', 'VFNet', 'DETR', 'TridentFasterRCNN',
+    'SparseRCNN', 'SCNet', 'DeformableDETR', 'AutoAssign', 'YOLOF', 'CenterNet', 'BaseDetectorAdaptive',
+    'TwoStageDetectorAdaptive', 'TwoStageDetectorAdaptiveAdversarial', 'TwoStageDetectorAdaptiveAutoBalance'
 ]
