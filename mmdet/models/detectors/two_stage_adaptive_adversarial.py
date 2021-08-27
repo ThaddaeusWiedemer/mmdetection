@@ -33,22 +33,33 @@ class TwoStageDetectorAdaptiveAdversarial(TwoStageDetectorAdaptive):
                                                                   init_cfg=init_cfg)
 
         # self.grad_reverse = GradReverse(1.0)
-
         self.domain_classifier_roi = nn.Sequential()
-        self.domain_classifier_roi.add_module('d_fc1', nn.Linear(128, 64))
-        self.domain_classifier_roi.add_module('d_bn1', nn.BatchNorm1d(64))
-        self.domain_classifier_roi.add_module('d_relu1', nn.ReLU(True))
-        self.domain_classifier_roi.add_module('d_fc2', nn.Linear(64, 2))
+        self.domain_classifier_roi.add_module('dcls_fc0', nn.Linear(256 * 7 * 7, 128))
+        self.domain_classifier_roi.add_module('dcls_bn0', nn.BatchNorm1d(128))
+        self.domain_classifier_roi.add_module('dcls_relu0', nn.ReLU(True))
+        # self.domain_classifier_roi.add_module('dcls_fc1', nn.Linear(128, 64))
+        # self.domain_classifier_roi.add_module('dcls_bn1', nn.BatchNorm1d(64))
+        # self.domain_classifier_roi.add_module('dcls_relu1', nn.ReLU(True))
+        # self.domain_classifier_roi.add_module('dcls_fc2', nn.Linear(64, 2))
+        self.domain_classifier_roi.add_module('dcls_fc1', nn.Linear(128, 32))
+        self.domain_classifier_roi.add_module('dcls_bn1', nn.BatchNorm1d(32))
+        self.domain_classifier_roi.add_module('dcls_relu1', nn.ReLU(True))
+        self.domain_classifier_roi.add_module('dcls_fc2', nn.Linear(32, 2))
         self.domain_classifier_roi.add_module('d_softmax', nn.LogSoftmax(dim=1))
 
         self.domain_classifier_rcnn = nn.Sequential()
-        self.domain_classifier_rcnn.add_module('d_fc1', nn.Linear(64, 32))
-        self.domain_classifier_rcnn.add_module('d_bn1', nn.BatchNorm1d(32))
-        self.domain_classifier_rcnn.add_module('d_relu1', nn.ReLU(True))
-        self.domain_classifier_rcnn.add_module('d_fc2', nn.Linear(32, 2))
-        self.domain_classifier_rcnn.add_module('d_softmax', nn.LogSoftmax(dim=1))
+        self.domain_classifier_rcnn.add_module('dcls_fc0', nn.Linear(1024, 128))
+        self.domain_classifier_rcnn.add_module('dcls_bn0', nn.BatchNorm1d(128))
+        self.domain_classifier_rcnn.add_module('dcls_relu0', nn.ReLU(True))
+        # self.domain_classifier_rcnn.add_module('dcls_fc1', nn.Linear(64, 32))
+        self.domain_classifier_rcnn.add_module('dcls_fc1', nn.Linear(128, 32))
+        self.domain_classifier_rcnn.add_module('dcls_bn1', nn.BatchNorm1d(32))
+        self.domain_classifier_rcnn.add_module('dcls_relu1', nn.ReLU(True))
+        self.domain_classifier_rcnn.add_module('dcls_fc2', nn.Linear(32, 2))
+        self.domain_classifier_rcnn.add_module('dcls_softmax', nn.LogSoftmax(dim=1))
 
         self.iter = 0
+        self.prev_loss = 0
 
     def forward_train(self,
                       img,
@@ -204,6 +215,32 @@ class TwoStageDetectorAdaptiveAdversarial(TwoStageDetectorAdaptive):
                   epsilon=1e-6):
         """Graph-based prototpye aggregation using adversaril loss instead of inter- and intra-class loss.
         """
+        # features have shape (R, F). We combine them into a single tensor with shape (2*R, F)
+        # R is the number of region proposals
+        feats = torch.cat((feat, feat_tgt), dim=0)
+
+        # calculate lambda
+        # this is just a crude implementation for 40 epochs with batch-size 16 (ceil(20/16) = 2 iterations per epoch)
+        # p = float(self.iter) / 40 / 2
+        # lambd = 2. / (1. + np.exp(-10 * p)) - 1
+        # self.iter += 1
+        # lambd = 1.0
+        lambd = np.exp(-self.prev_loss)
+
+        # put the prototypes through the gradient reverse layer and the domain classifier
+        res = classifier(GradReverse.apply(feats, lambd))
+
+        # target should have shape (2*R) and have entries (0, 0, 0, ..., 0, 1, ..., 1, 1, 1), i.e. 0 for source and 1
+        # for target domain
+        target = torch.cat((torch.zeros(feat.size(0)), torch.ones(feat.size(0))), dim=0).long().cuda()
+
+        # just build negative log-likelihood loss
+        loss = nn.NLLLoss()(res, target)
+
+        self.prev_loss = float(loss)
+
+        return loss
+
         use_graph = self.gpa_cfg.get('use_graph', True)
         normalize = self.gpa_cfg.get('normalize', False)
 
@@ -300,11 +337,11 @@ class TwoStageDetectorAdaptiveAdversarial(TwoStageDetectorAdaptive):
         ptts = torch.cat((class_ptt, tgt_class_ptt), dim=0)
 
         # calculate lambda
-        # this is just a crude implementation for 100 epochs with batch-size 16
-        # p = float(self.iter) / 100 / 17
-        # lambd = 2. / (1. + np.exp(-10 * p)) - 1
-        # self.iter += 1
-        lambd = 1.0
+        # this is just a crude implementation for 40 epochs with batch-size 16 (ceil(20/16) = 2 iterations per epoch)
+        p = float(self.iter) / 40 / 2
+        lambd = 2. / (1. + np.exp(-10 * p)) - 1
+        self.iter += 1
+        # lambd = 1.0
 
         # put the prototypes through the gradient reverse layer and the domain classifier
         res = classifier(GradReverse.apply(ptts, lambd))

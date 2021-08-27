@@ -1,3 +1,5 @@
+# same config file as normal adaptive, but without source/target dataset
+
 # model
 model = dict(
     type='TwoStageDetectorAdaptive',  # use adaptive model
@@ -82,22 +84,22 @@ model = dict(
 
 # data
 dataset_type = 'CocoDataset'
-data_root_src = 'data/PIROPO/'
-data_root_tgt = 'data/MW-18Mar/'
+# data_root_src = 'data/PIROPO/'
+data_root_tgt = '/data/PIROPO'
 classes = ('person', )
 
 img_norm_cfg = dict(mean=[103.53, 116.28, 123.675], std=[1.0, 1.0, 1.0], to_rgb=False)
 
-train_pipeline_src = [
-    dict(type='LoadImageFromFile'),
-    dict(type='LoadAnnotations', with_bbox=True),
-    dict(type='Resize', img_scale=(800, 800), keep_ratio=True),
-    dict(type='RandomFlip', flip_ratio=0.5),
-    dict(type='Normalize', **img_norm_cfg),
-    dict(type='Pad', size_divisor=32),
-    dict(type='DefaultFormatBundle'),
-    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels'])
-]
+# train_pipeline_src = [
+#     dict(type='LoadImageFromFile'),
+#     dict(type='LoadAnnotations', with_bbox=True),
+#     dict(type='Resize', img_scale=(800, 800), keep_ratio=True),
+#     dict(type='RandomFlip', flip_ratio=0.5),
+#     dict(type='Normalize', **img_norm_cfg),
+#     dict(type='Pad', size_divisor=32),
+#     dict(type='DefaultFormatBundle'),
+#     dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels'])
+# ]
 
 train_pipeline_tgt = [
     dict(type='LoadImageFromFile'),
@@ -114,26 +116,27 @@ train_pipeline_tgt = [
     #      keymap=dict(img='image', gt_masks='masks', gt_bboxes='bboxes'),
     #      update_pad_shape=False,
     #      skip_img_without_anno=False),
-    # dict(
-    #     type='Albu',
-    #     transforms=[
-    #         dict(
-    #             type='ShiftScaleRotate',
-    #             shift_limit=0.0,
-    #             scale_limit=0.0,
-    #             rotate_limit=180,
-    #             interpolation=1,
-    #             p=1.0)
-    #     ],
-    #     bbox_params=dict(
-    #         type='BboxParams',
-    #         format='pascal_voc',
-    #         label_fields=['gt_labels'],
-    #         min_visibility=0.0,
-    #         filter_lost_elements=True),
-    #     keymap=dict(img='image', gt_masks='masks', gt_bboxes='bboxes'),
-    #     update_pad_shape=False,
-    #     skip_img_without_anno=False),
+    dict(
+        type='Albu',
+        transforms=[
+            dict(
+                type='ShiftScaleRotate',
+                shift_limit=0.0,
+                scale_limit=0.0,
+                rotate_limit=180,
+                interpolation=1,
+                border_mode=0,  # BORDER_CONSTANT,
+                value=0,  # value for padding
+                p=1.0)
+        ],
+        bbox_params=dict(type='BboxParams',
+                         format='pascal_voc',
+                         label_fields=['gt_labels'],
+                         min_visibility=0.0,
+                         filter_lost_elements=True),
+        keymap=dict(img='image', gt_masks='masks', gt_bboxes='bboxes'),
+        update_pad_shape=False,
+        skip_img_without_anno=False),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
     dict(type='DefaultFormatBundle'),
@@ -158,15 +161,15 @@ test_pipeline = [
 data = dict(
     samples_per_gpu=4,
     workers_per_gpu=2,
-    train_src=dict(  # source domain training set
+    # train_src=dict(  # source domain training set
+    #     type=dataset_type,
+    #     ann_file=data_root_src + 'omni_training.json',
+    #     img_prefix=data_root_src,
+    #     pipeline=train_pipeline_src,
+    #     classes=classes),
+    train=dict(  # target domain training set
         type=dataset_type,
-        ann_file=data_root_src + 'omni_training.json',
-        img_prefix=data_root_src,
-        pipeline=train_pipeline_src,
-        classes=classes),
-    train_tgt=dict(  # target domain training set
-        type=dataset_type,
-        ann_file=data_root_tgt + 'training.json',
+        ann_file=data_root_tgt + '/omni_training_20a.json',
         img_prefix=data_root_tgt,
         pipeline=train_pipeline_tgt,
         classes=classes),
@@ -185,7 +188,7 @@ data = dict(
 
 # training and optimizer
 # fine-tuning: smaller lr, freeze FPN (neck), freeze RPN
-evaluation = dict(interval=1, save_best='bbox_mAP_50', metric='bbox')
+evaluation = dict(interval=5, save_best='bbox_mAP_50', metric='bbox')
 optimizer = dict(
     type='SGD',
     lr=0.001,
@@ -199,8 +202,7 @@ optimizer = dict(
     #     }))
     # paramwise_cfg=dict(custom_keys=dict({'gpa_layer_roi': dict(lr_mult=0.1), 'gpa_layer_rcnn': dict(lr_mult=0.1)}))
     # set whole net except domain classifier to learn much slower/not at all for first 10 epochs
-    # paramwise_cfg=dict(custom_keys=dict(dcls=dict(lr_mult=10)))
-)
+    paramwise_cfg=dict(custom_keys=dict(dcls=dict(lr_mult=10))))
 optimizer_config = dict(grad_clip=None)
 lr_config = dict(
     policy='step',
@@ -216,7 +218,6 @@ custom_hooks = [dict(type='NumClassCheckHook')]
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 load_from = 'mmdetection/checkpoints/faster_rcnn_r50_fpn_1x_coco-person_20201216_175929-d022e227.pth'
-# load_from = '/home/thaddaus/WORK_DIRS/GPA/tuning/coco_piropo_20a_TwoStageDetectorAdaptiveAdversarial_1_1_1_1_none_gTrue_seed_direct7/latest.pth'
 resume_from = None
 workflow = [('train', 1)]
 work_dir = 'work_dirs/da'

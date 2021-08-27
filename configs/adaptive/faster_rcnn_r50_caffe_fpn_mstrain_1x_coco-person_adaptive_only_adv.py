@@ -184,23 +184,16 @@ data = dict(
         classes=classes))
 
 # training and optimizer
-# fine-tuning: smaller lr, freeze FPN (neck), freeze RPN
-evaluation = dict(interval=1, save_best='bbox_mAP_50', metric='bbox')
+# fine-tuning: smaller lr
+evaluation = dict(interval=1, metric='bbox')
 optimizer = dict(
     type='SGD',
-    lr=0.001,
+    lr=0.01,
     momentum=0.9,
     weight_decay=0.0001,
-    # uncomment to freeze neck and RPN
-    # paramwise_cfg=dict(
-    #     custom_keys=dict({
-    #         'neck': dict(lr_mult=0.0),
-    #         'rpn_head.cls_convs': dict(lr_mult=0.0)
-    #     }))
-    # paramwise_cfg=dict(custom_keys=dict({'gpa_layer_roi': dict(lr_mult=0.1), 'gpa_layer_rcnn': dict(lr_mult=0.1)}))
-    # set whole net except domain classifier to learn much slower/not at all for first 10 epochs
-    # paramwise_cfg=dict(custom_keys=dict(dcls=dict(lr_mult=10)))
-)
+    # set all modules except domain classifiers to not train
+    paramwise_cfg=dict(custom_keys=dict(
+        backbone=dict(lr_mult=0), neck=dict(lr_mult=0), rpn_head=dict(lr_mult=0), roi_head=dict(lr_mult=0))))
 optimizer_config = dict(grad_clip=None)
 lr_config = dict(
     policy='step',
@@ -209,14 +202,13 @@ lr_config = dict(
     # warmup_ratio=0.001,
     step=[41])
 # change to iteration based runner with 1776*x iterations for training on PIROPO
-runner = dict(type='EpochBasedRunnerAdaptive', max_epochs=40)  # use adaptive runner that loads 2 datasets
+runner = dict(type='EpochBasedRunnerAdaptive', max_epochs=20)  # use adaptive runner that loads 2 datasets
 checkpoint_config = dict(interval=1)  # for iter-based runner use 1776 or similar
 log_config = dict(interval=1, hooks=[dict(type='TextLoggerHook')])
 custom_hooks = [dict(type='NumClassCheckHook')]
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 load_from = 'mmdetection/checkpoints/faster_rcnn_r50_fpn_1x_coco-person_20201216_175929-d022e227.pth'
-# load_from = '/home/thaddaus/WORK_DIRS/GPA/tuning/coco_piropo_20a_TwoStageDetectorAdaptiveAdversarial_1_1_1_1_none_gTrue_seed_direct7/latest.pth'
 resume_from = None
 workflow = [('train', 1)]
 work_dir = 'work_dirs/da'
