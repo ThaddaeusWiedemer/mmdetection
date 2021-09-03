@@ -43,6 +43,27 @@ model = dict(
             loss_cls=dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
             loss_bbox=dict(type='L1Loss', loss_weight=1.0))),
     train_cfg=dict(
+        da=[
+            dict(type='adversarial',
+                 feat='backbone',
+                 loss_weights=dict(adversarial=1.0),
+                 lambda_mode='coupled',
+                 lambda_init=1.0),
+            dict(type='gpa',
+                 feat='roi',
+                 loss_weights=dict(intra=10.0, inter=0.1),
+                 distance='mean_squared',
+                 normalize=False,
+                 use_graph=True,
+                 layer='fc_layer'),
+            dict(type='gpa',
+                 feat='rcnn',
+                 loss_weights=dict(intra=100.0, inter=0.1),
+                 distance='mean_squared',
+                 normalize=False,
+                 use_graph=True,
+                 layer='fc_layer')
+        ],
         gpa=dict(
             loss_roi_intra=10.0,  # loss for domain adaptation after roi
             loss_roi_inter=0.1,  # loss for domain adaptation in rcnn head
@@ -216,7 +237,6 @@ custom_hooks = [dict(type='NumClassCheckHook')]
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 load_from = 'mmdetection/checkpoints/faster_rcnn_r50_fpn_1x_coco-person_20201216_175929-d022e227.pth'
-# load_from = '/home/thaddaus/WORK_DIRS/GPA/tuning/coco_piropo_20a_TwoStageDetectorAdaptiveAdversarial_1_1_1_1_none_gTrue_seed_direct7/latest.pth'
 resume_from = None
 workflow = [('train', 1)]
 work_dir = 'work_dirs/da'
