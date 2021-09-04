@@ -398,11 +398,28 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         return losses
 
     def _gpa(self, inputs, layer, cfg):
-        # get feature maps to align
+        # get feature maps to align and flatten
         try:
             feat_src, feat_tgt = inputs[cfg['feat']]
         except KeyError:
             print(f"`{cfg['feat']} is not a valid input for an adaptation module")
+        feat_src = feat_src.flatten(1)
+        feat_tgt = feat_tgt.flatten(1)
+
+        # TODO is this part correct?
+        # apply layer
+        if isinstance(layer, nn.Linear):
+            feat_src = layer(feat_src)
+            feat_tgt = layer(feat_tgt)
+        elif isinstance(layer, nn.MaxPool1d) or isinstance(layer, nn.MaxPool1d):
+            feat_src = layer(feat_src.unsqueeze(1)).squeeze(1)
+            feat_tgt = layer(feat_tgt.unsqueeze(1)).squeeze(1)
+        elif layer is None:
+            pass
+
+        # get gpa losses
+        losses = self._gpa_loss(feat_src, feat_tgt, inputs, cfg)
+
         losses = dict()
         return losses
 
