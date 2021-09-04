@@ -4,9 +4,11 @@ import torch
 import torch.nn as nn
 
 import math
+import numpy as np
 
 from ..builder import DETECTORS, build_backbone, build_head, build_neck
 from .base_adaptive import BaseDetectorAdaptive
+from ..utils import GradReverse
 
 
 @DETECTORS.register_module()
@@ -47,6 +49,8 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
             self.with_da = self.da_cfg is not None
 
         self.first_iter = True
+        self.iter = 0
+        self.prev_loss = dict()
 
         # TODO get backbone stages and neck output shape
         feat_shapes = dict()
@@ -71,8 +75,10 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         # define all layers for the domain adaptation modules
         self.da_layers = dict()
         for module in self.da_cfg:
-            name = module['type']
-            feat = module['feat']
+            name = module.get('type', None)
+            feat = module.get('feat', None)
+            assert name is not None, 'a type must be specified for each domain adaptation module'
+            assert feat is not None, f'domain adaptation module `{name}` did not specify input features'
 
             # GPA uses one layer to reduce feature dimension
             if name == 'gpa':
@@ -96,6 +102,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
 
             # adversarial domain adaptation needs a domain classifier
             elif name == 'adversarial':
+                self.prev_loss.update({feat: 0.0})
                 layer = nn.Sequential()
                 # first fc-layer
                 layer.add_module(f'dcls_{feat}_fc0', nn.Linear(math.prod(feat_shapes[feat]), 128))
@@ -391,13 +398,57 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         return losses
 
     def _gpa(self, inputs, layer, cfg):
-        # TODO run correct features through layer, then generate losses
+        # get feature maps to align
+        try:
+            feat_src, feat_tgt = inputs[cfg['feat']]
+        except KeyError:
+            print(f"`{cfg['feat']} is not a valid input for an adaptation module")
         losses = dict()
         return losses
 
     def _adversarial(self, inputs, classifier, cfg):
-        # TODO implement adversarial
-        return losses
+        # get feature maps to align
+        try:
+            feat_src, feat_tgt = inputs[cfg['feat']]
+        except KeyError:
+            print(f"`{cfg['feat']} is not a valid input for an adaptation module")
+        # features have shape (N, F), where N is either batch size or number of regions. We combine them into a single tensor with shape (2*N, F)
+        feat_src = feat_src.view(feat_src.size(0), -1)
+        feat_tgt = feat_tgt.view(feat_tgt.size(0), -1)
+        feats = torch.cat((feat_src, feat_tgt), dim=0)
+
+        # set lambda (weight of gradient after reversal) according to config
+        def isfloat(value):
+            try:
+                float(value)
+                return True
+            except ValueError:
+                return False
+        
+        mode = cfg.get('lambda', 1.0)
+        if mode == 'incr':
+            p = float(self.iter) / 40 / 2
+            lambd = 2. / (1. + np.exp(-10 * p)) - 1
+            self.iter += 1
+        elif mode == 'coupled':
+            lambd = math.exp(-self.prev_loss[cfg['feat']])
+        elif isfloat(mode):
+            lambd = mode
+        else:
+            raise KeyError(f'adversarial lambda-mode has to be one of [`const`, `incr`, (float)], but is `{mode}`')
+
+        # apply gradient reverse layer and domain classifier
+        out = classifier(GradReverse.apply(feats, lambd))
+
+        # build classification targets of shape (2*N) with entries 0: source, 1: target
+        target = torch.cat((torch.zeros(feat_src.size(0)), torch.ones(feat_tgt.size(0))), dim=0).long().cuda()
+
+        # calculate loss
+        loss = nn.NLLLoss()(out, target)
+        
+        if mode == 'coupled':
+            self.prev_loss[cfg['feat']] = loss
+        return loss
 
     def _gpa_distance(self, feat_a, feat_b):
         """use this to compute distances between features for this loss"""
