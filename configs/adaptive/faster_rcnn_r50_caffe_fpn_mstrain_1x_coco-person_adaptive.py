@@ -1,8 +1,7 @@
 # model
 model = dict(
-    type='TwoStageDetectorAdaptive',  # use adaptive model
-    # TODO consider moving this to init_cfg
-    pretrained='open-mmlab://detectron2/resnet50_caffe',  # only for backbone, overwritten by `load_from=...`
+    type='TwoStageDetectorDA',  # use adaptive model
+    # pretrained='open-mmlab://detectron2/resnet50_caffe',  # only for backbone, overwritten by `load_from=...`
     backbone=dict(type='ResNet',
                   depth=50,
                   num_stages=4,
@@ -44,11 +43,7 @@ model = dict(
             loss_bbox=dict(type='L1Loss', loss_weight=1.0))),
     train_cfg=dict(
         da=[
-            dict(type='adversarial',
-                 feat='backbone',
-                 loss_weights=dict(adversarial=1.0),
-                 lambda_mode='coupled',
-                 lambda_init=1.0),
+            # dict(type='adversarial', feat='neck_4', loss_weights=dict(adversarial=1.0), lambd='coupled'),
             dict(type='gpa',
                  feat='roi',
                  loss_weights=dict(intra=10.0, inter=0.1),
@@ -228,10 +223,10 @@ lr_config = dict(
     warmup=None,
     # warmup_iters=500,
     # warmup_ratio=0.001,
-    step=[41])
+    step=[200])  # i.e. no step
 # change to iteration based runner with 1776*x iterations for training on PIROPO
 runner = dict(type='EpochBasedRunnerAdaptive', max_epochs=40)  # use adaptive runner that loads 2 datasets
-checkpoint_config = dict(interval=1)  # for iter-based runner use 1776 or similar
+checkpoint_config = dict(interval=200)  # for iter-based runner use 1776 or similar
 log_config = dict(interval=1, hooks=[dict(type='TextLoggerHook')])
 custom_hooks = [dict(type='NumClassCheckHook')]
 dist_params = dict(backend='nccl')

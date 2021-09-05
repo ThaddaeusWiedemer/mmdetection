@@ -12,7 +12,7 @@ from ..utils import GradReverse
 
 
 @DETECTORS.register_module()
-class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
+class TwoStageDetectorDA(BaseDetectorAdaptive):
     """Base class for two-stage detectors with domain adaptation.
 
     Two-stage detectors typically consisting of a region proposal network and a
@@ -27,7 +27,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                  test_cfg=None,
                  pretrained=None,
                  init_cfg=None):
-        super(TwoStageDetectorAdaptive, self).__init__(init_cfg)
+        super(TwoStageDetectorDA, self).__init__(init_cfg)
         if pretrained:
             warnings.warn('DeprecationWarning: pretrained is deprecated, ' 'please use "init_cfg" instead')
             backbone.pretrained = pretrained
@@ -54,8 +54,15 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
 
         # TODO get backbone stages and neck output shape
         feat_shapes = dict()
-        feat_shapes.update([(f'backbone_{i}', [ch] for i, ch in enumerate([neck['in_channels']]))])
-        feat_shapes.update({'neck': [neck['out_channels']]})
+        # feat_shapes.update([(f'backbone_{i}', [ch] for i, ch in enumerate([neck['in_channels']]))])
+        neck_out = neck['out_channels']
+        feat_shapes.update({
+            'neck_0': [neck_out, 200, 200],
+            'neck_1': [neck_out, 100, 100],
+            'neck_2': [neck_out, 50, 50],
+            'neck_3': [neck_out, 25, 25],
+            'neck_4': [neck_out, 13, 13]
+        })
 
         if roi_head is not None:
             # update train and test cfg here for now
@@ -73,7 +80,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
             feat_shapes.update({'rcnn': [roi_head['bbox_head']['fc_out_channels']]})
 
         # define all layers for the domain adaptation modules
-        self.da_layers = dict()
+        self.da_layers = nn.ModuleDict()  # use ModuleDict instead of dict to register all layers to the model
         for module in self.da_cfg:
             name = module.get('type', None)
             feat = module.get('feat', None)
@@ -82,7 +89,8 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
 
             # GPA uses one layer to reduce feature dimension
             if name == 'gpa':
-                assert feat in ['roi', 'rcnn'], f'GPA can only be used for ROI or RCNN features, but was defined for `{feat}`'
+                assert feat in ['roi',
+                                'rcnn'], f'GPA can only be used for ROI or RCNN features, but was defined for `{feat}`'
 
                 layer_type = module.get('layer', 'fc_layer')
                 in_shapes = {'roi': 128, 'rcnn': 64}
@@ -98,7 +106,8 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                 elif layer_type == 'none':
                     layer = None
                 else:
-                    raise KeyError(f'Layer type `{layer_type}` in domain adaptation module `{name}` on `{feat}` does not exist!')
+                    raise KeyError(
+                        f'Layer type `{layer_type}` in domain adaptation module `{name}` on `{feat}` does not exist!')
 
             # adversarial domain adaptation needs a domain classifier
             elif name == 'adversarial':
@@ -106,11 +115,11 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                 layer = nn.Sequential()
                 # first fc-layer
                 layer.add_module(f'dcls_{feat}_fc0', nn.Linear(math.prod(feat_shapes[feat]), 128))
-                layer.add_module(f'dcls_{feat}_bn0', nn.Batchnorm1d(128))
+                layer.add_module(f'dcls_{feat}_bn0', nn.BatchNorm1d(128))
                 layer.add_module(f'dcls_{feat}_relu0', nn.ReLU(True))
                 # second fc-layer
                 layer.add_module(f'dcls_{feat}_fc1', nn.Linear(128, 32))
-                layer.add_module(f'dcls_{feat}_bn1', nn.Batchnorm1d(32))
+                layer.add_module(f'dcls_{feat}_bn1', nn.BatchNorm1d(32))
                 layer.add_module(f'dcls_{feat}_relu1', nn.ReLU(True))
                 # output
                 layer.add_module(f'dcls_{feat}_fc2', nn.Linear(32, 2))
@@ -233,8 +242,6 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         """
         assert gt_masks is None, 'domain adaptation cannot handle gt_masks as of now'
 
-        batch_size = img.size(0)
-
         # save all intermediary features as tuples (source, target) in this dict to potentially deploy domain adaptation on them
         feats = dict()
         feats.update({
@@ -247,28 +254,30 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         losses = dict()
 
         # extract features in both domains
-        # TODO get individual features for neck and different backbone stages
+        # TODO get backbone features before neck?
         x_src = self.extract_feat(img)
         x_tgt = self.extract_feat(img_tgt)
-        feats.update({'feat_backbone': (x_src, x_tgt)})
+        for i, (_x_src, _x_tgt) in enumerate(zip(x_src, x_tgt)):
+            # print(f'features in neck {i}: {_x_src.size()}')
+            feats.update({f'neck_{i}': (_x_src, _x_tgt)})
 
         # RPN forward and loss (class and bbox) in both domains
         if self.with_rpn:
             proposal_cfg = self.train_cfg.get('rpn_proposal', self.test_cfg.rpn)
-            rpn_losses_src, proposal_list_src = self.rpn_head.forward_train(x_src,
-                                                                            img_metas,
-                                                                            gt_bboxes,
-                                                                            gt_labels=None,
-                                                                            gt_bboxes_ignore=gt_bboxes_ignore,
-                                                                            proposal_cfg=proposal_cfg)
-            rpn_losses_tgt, proposal_list_tgt = self.rpn_head.forward_train(x_tgt,
-                                                                            img_metas_tgt,
-                                                                            gt_bboxes_tgt,
-                                                                            gt_labels_tgt=None,
-                                                                            gt_bboxes_ignore=gt_bboxes_ignore,
-                                                                            proposal_cfg=proposal_cfg)
+            rpn_losses_src, proposals_src = self.rpn_head.forward_train(x_src,
+                                                                        img_metas,
+                                                                        gt_bboxes,
+                                                                        gt_labels=None,
+                                                                        gt_bboxes_ignore=gt_bboxes_ignore,
+                                                                        proposal_cfg=proposal_cfg)
+            rpn_losses_tgt, proposals_tgt = self.rpn_head.forward_train(x_tgt,
+                                                                        img_metas_tgt,
+                                                                        gt_bboxes_tgt,
+                                                                        gt_labels_tgt=None,
+                                                                        gt_bboxes_ignore=gt_bboxes_ignore,
+                                                                        proposal_cfg=proposal_cfg)
             # save everything for domain adaptation
-            feats.update({'proposals': (proposal_list_src, proposal_list_tgt)})
+            feats.update({'proposals': (proposals_src, proposals_tgt)})
             losses.update(rpn_losses_src)
             losses.update(rpn_losses_tgt)
         else:
@@ -276,24 +285,24 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
             proposal_list = proposals
 
         # get sampled ROIs, features in head, class score, and losses (class and bbox) in both domains
-        roi_losses_src, rois_src, feat_roi_src, feat_rcnn_src, cls_score_src = self.roi_head.forward_train(
-            x_src, img_metas, proposal_list_src, gt_bboxes, gt_labels, gt_bboxes_ignore, gt_masks, **kwargs)
-        roi_losses_tgt, rois_tgt, feat_roi_tgt, feat_rcnn_tgt, cls_score_tgt = self.roi_head.forward_train(
-            x_tgt, img_metas_tgt, proposal_list_tgt, gt_bboxes_tgt, gt_labels_tgt, gt_bboxes_ignore, gt_masks, **kwargs)
+        roi_losses_src, rois_src, roi_src, rcnn_src, cls_src = self.roi_head.forward_train(
+            x_src, img_metas, proposals_src, gt_bboxes, gt_labels, gt_bboxes_ignore, gt_masks, **kwargs)
+        roi_losses_tgt, rois_tgt, roi_tgt, rcnn_tgt, cls_tgt = self.roi_head.forward_train(
+            x_tgt, img_metas_tgt, proposals_tgt, gt_bboxes_tgt, gt_labels_tgt, gt_bboxes_ignore, gt_masks, **kwargs)
         # save everything for domain adaptation
         # TODO also save final bbox
         feats.update({
             'rois': (rois_src, rois_tgt),
-            'feat_roi': (feat_roi_src, feat_roi_tgt),
-            'feat_rcnn': (feat_rcnn_src, feat_rcnn_tgt),
-            'cls_score': (cls_score_src, cls_score_tgt)
+            'roi': (roi_src, roi_tgt),
+            'rcnn': (rcnn_src, rcnn_tgt),
+            'cls': (cls_src, cls_tgt)
         })
         losses.update(roi_losses_src)
         losses.update(roi_losses_tgt)
 
         # adapting on features after ROI and after RCNN only makes a difference when the ROI-head has shared
         # layers
-        if feat_roi_src.size() == feat_rcnn_src.size() and torch.eq(feat_roi_src, feat_rcnn_src).all():
+        if roi_src.size() == rcnn_src.size() and torch.eq(roi_src, rcnn_src).all():
             warnings.warn('The features for domain adaptation after ROI and RCNN are the same, the model might not be\
                 using a shared head')
 
@@ -363,7 +372,9 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
 
         # call every module function and collect losses
         for module in self.da_cfg:
-            losses.update(getattr(self, f"_{module['type']}")(feats, self.da_layers[f"{module['feat']}_{module['type']}"], module))
+            losses.update(
+                getattr(self, f"_{module['type']}")(feats, self.da_layers[f"{module['feat']}_{module['type']}"],
+                                                    module))
 
         return losses
 
@@ -376,33 +387,36 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
         Returns:
             dict[str, Tensor]: re-weighted network losses
         """
-        if self.first_iter:
-            print('LOSSES:')
-            print(losses)
+        # if self.first_iter:
+        #     print('LOSSES:')
+        #     print(losses)
 
         for module in self.da_cfg:
+            name = module['type']
             feat = module['feat']
             for loss, weight in module.loss_weights.items():
                 # ignore if weight = 1.0
                 if weight == 1.0:
                     break
-                # update all losses that match the 'location_loss' substring
-                _losses = [(key, value * weight) for key, value in losses.items() if f'{feat}_{loss}' in key.lower()]
+                # update all losses that match the 'location_type_loss' substring
+                _losses = [(key, value * weight) for key, value in losses.items()
+                           if f'{feat}_{name}_{loss}' in key.lower()]
                 losses.update(_losses)
 
-                if self.first_iter:
-                    print(f'updated {feat}_{loss} by factor {weight}:')
-                    print(_losses)
+                # if self.first_iter:
+                #     print(f'updated {feat}_{loss} by factor {weight}:')
+                #     print(_losses)
 
         self.first_iter = False
         return losses
 
     def _gpa(self, inputs, layer, cfg):
         # get feature maps to align and flatten
+        feat = cfg['feat']
         try:
-            feat_src, feat_tgt = inputs[cfg['feat']]
+            feat_src, feat_tgt = inputs[feat]
         except KeyError:
-            print(f"`{cfg['feat']} is not a valid input for an adaptation module")
+            print(f"`{feat}` is not a valid input for an adaptation module")
         feat_src = feat_src.flatten(1)
         feat_tgt = feat_tgt.flatten(1)
 
@@ -418,17 +432,17 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
             pass
 
         # get gpa losses
-        losses = self._gpa_loss(feat_src, feat_tgt, inputs, cfg)
+        loss_intra, loss_inter = self._gpa_loss(feat_src, feat_tgt, inputs, cfg)
 
-        losses = dict()
-        return losses
+        return {f'loss_{feat}_gpa_intra': loss_intra, f'loss_{feat}_gpa_inter': loss_inter}
 
     def _adversarial(self, inputs, classifier, cfg):
         # get feature maps to align
+        feat = cfg['feat']
         try:
-            feat_src, feat_tgt = inputs[cfg['feat']]
+            feat_src, feat_tgt = inputs[feat]
         except KeyError:
-            print(f"`{cfg['feat']} is not a valid input for an adaptation module")
+            print(f"`{feat} is not a valid input for an adaptation module")
         # features have shape (N, F), where N is either batch size or number of regions. We combine them into a single tensor with shape (2*N, F)
         feat_src = feat_src.view(feat_src.size(0), -1)
         feat_tgt = feat_tgt.view(feat_tgt.size(0), -1)
@@ -441,14 +455,14 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                 return True
             except ValueError:
                 return False
-        
-        mode = cfg.get('lambda', 1.0)
+
+        mode = cfg.get('lambd', 1.0)
         if mode == 'incr':
             p = float(self.iter) / 40 / 2
             lambd = 2. / (1. + np.exp(-10 * p)) - 1
             self.iter += 1
         elif mode == 'coupled':
-            lambd = math.exp(-self.prev_loss[cfg['feat']])
+            lambd = math.exp(-self.prev_loss[feat])
         elif isfloat(mode):
             lambd = mode
         else:
@@ -462,15 +476,15 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
 
         # calculate loss
         loss = nn.NLLLoss()(out, target)
-        
-        if mode == 'coupled':
-            self.prev_loss[cfg['feat']] = loss
-        return loss
 
-    def _gpa_distance(self, feat_a, feat_b):
+        if mode == 'coupled':
+            self.prev_loss[feat] = loss
+        return {f'loss_{feat}_adversarial': loss}
+
+    def _gpa_distance(self, feat_a, feat_b, cfg):
         """use this to compute distances between features for this loss"""
         distances = ['mean_squared', 'euclidean', 'cosine']
-        distance = self.gpa_cfg.get('distance', 'mean_squared')
+        distance = cfg.get('distance', 'mean_squared')
         assert distance in distances, f'distance for GPA must be one of {distances}, but got {distance}'
 
         if distance == 'mean_squared':
@@ -574,10 +588,10 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
 
         return iou
 
-    def _gpa_inter_class_loss(self, feat_a, feat_b, margin=1.):
+    def _gpa_inter_class_loss(self, feat_a, feat_b, cfg, margin=1.):
         # could use F.relu to write more concisely
-        out = torch.pow((margin - torch.sqrt(self._gpa_distance(feat_a, feat_b))) / margin, 2) \
-            * torch.pow(torch.max(margin - torch.sqrt(self._gpa_distance(feat_a, feat_b)), torch.tensor(0).float().cuda()), 2.0)
+        out = torch.pow((margin - torch.sqrt(self._gpa_distance(feat_a, feat_b, cfg))) / margin, 2) \
+            * torch.pow(torch.max(margin - torch.sqrt(self._gpa_distance(feat_a, feat_b, cfg)), torch.tensor(0).float().cuda()), 2.0)
         return out
 
     # def _gpa_loss(self,
@@ -593,12 +607,14 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
     #               gt_labels_tgt,
     #               batch_size,
     #               epsilon=1e-6):
-    def _gpa_loss(self, feat_src, feat_tgt, inputs, cfg)
+    def _gpa_loss(self, feat_src, feat_tgt, inputs, cfg):
         """Graph-based prototpye daptation loss as in https://github.com/ChrisAllenMing/GPA-detection.
         """
         use_graph = cfg.get('use_graph', True)
         normalize = cfg.get('normalize', False)
         epsilon = cfg.get('epsilon', 1e-6)
+
+        batch_size = inputs['img'][0].size(0)
 
         # view inputs as (batch_size, roi_sampler_num, )
         # with dimensions (batch_size, roi_sampler_num, num_feat)
@@ -607,25 +623,25 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
 
         # get the class probability of every class for source and target domains
         # with dimensions (batch_size, roi_sampler_num, num_feat)
-        cls_prob_src, cls_prob_tgt = inputs['cls_score']
-        cls_prob_src = cls_prob_src.view(batch_size, -1, cls_prob_src.size(1))
-        cls_prob_tgt = cls_prob_tgt.view(batch_size, -1, cls_prob_tgt.size(1))
+        cls_src, cls_tgt = inputs['cls']
+        cls_src = cls_src.view(batch_size, -1, cls_src.size(1))
+        cls_tgt = cls_tgt.view(batch_size, -1, cls_tgt.size(1))
 
-        # view rois as (batch_size, roi_sampler_num, 5)
+        # view ROIs as (batch_size, roi_sampler_num, 5), since each ROI has 5 parameters
         rois_src, rois_tgt = inputs['rois']
         rois_src = rois_src.view(batch_size, -1, rois_src.size(1))
         rois_tgt = rois_tgt.view(batch_size, -1, rois_tgt.size(1))
 
-        num_classes = cls_prob.size(2)
+        num_classes = cls_src.size(2)
         class_ptt = list()
         tgt_class_ptt = list()
 
         for i in range(num_classes):
-            tmp_cls_prob = cls_prob[:, :, i].view(cls_prob.size(0), cls_prob.size(1), 1)
+            tmp_cls_prob = cls_src[:, :, i].view(cls_src.size(0), cls_src.size(1), 1)
             # if invert_cls_prob:
             #     tmp_cls_prob = 1 - tmp_cls_prob  # this is useless with 2 classes, it just switches the classes
             # TODO instead of using class probability to assing ROIs to each class, use 25% and 75% IoU with ground-truth
-            tmp_class_feat = feat * tmp_cls_prob  # weigh features with class probability
+            tmp_class_feat = feat_src * tmp_cls_prob  # weigh features with class probability
             tmp_feat = list()
             tmp_weight = list()
 
@@ -636,7 +652,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
 
                 # graph-based aggregation
                 if use_graph:
-                    tmp_batch_adj = self._gpa_get_adj(rois[j, :, :])
+                    tmp_batch_adj = self._gpa_get_adj(rois_src[j, :, :])
                     tmp_batch_feat = torch.mm(tmp_batch_adj, tmp_batch_feat_)
                     tmp_batch_weight = torch.mm(tmp_batch_adj, tmp_batch_weight_)
 
@@ -659,7 +675,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                                        dim=0) / (torch.sum(tmp_class_weight) + epsilon)
             class_ptt.append(tmp_class_feat)
 
-            tmp_tgt_cls_prob = cls_prob_tgt[:, :, i].view(cls_prob_tgt.size(0), cls_prob_tgt.size(1), 1)
+            tmp_tgt_cls_prob = cls_tgt[:, :, i].view(cls_tgt.size(0), cls_tgt.size(1), 1)
             tmp_tgt_class_ptt = feat_tgt * tmp_tgt_cls_prob
             tmp_tgt_feat = list()
             tmp_tgt_weight = list()
@@ -705,17 +721,17 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
             tmp_tgt_feat_1 = tgt_class_ptt[i, :]
 
             # intra-class loss is just distance of features
-            loss_intra = loss_intra + self._gpa_distance(tmp_src_feat_1, tmp_tgt_feat_1)
+            loss_intra = loss_intra + self._gpa_distance(tmp_src_feat_1, tmp_tgt_feat_1, cfg)
 
             # inter-class loss is distance between all 4 source-target pairs
             for j in range(i + 1, num_classes):
                 tmp_src_feat_2 = class_ptt[j, :]
                 tmp_tgt_feat_2 = tgt_class_ptt[j, :]
 
-                loss_inter = loss_inter + self._gpa_inter_class_loss(tmp_src_feat_1, tmp_src_feat_2)
-                loss_inter = loss_inter + self._gpa_inter_class_loss(tmp_tgt_feat_1, tmp_tgt_feat_2)
-                loss_inter = loss_inter + self._gpa_inter_class_loss(tmp_src_feat_1, tmp_tgt_feat_2)
-                loss_inter = loss_inter + self._gpa_inter_class_loss(tmp_tgt_feat_1, tmp_src_feat_2)
+                loss_inter = loss_inter + self._gpa_inter_class_loss(tmp_src_feat_1, tmp_src_feat_2, cfg)
+                loss_inter = loss_inter + self._gpa_inter_class_loss(tmp_tgt_feat_1, tmp_tgt_feat_2, cfg)
+                loss_inter = loss_inter + self._gpa_inter_class_loss(tmp_src_feat_1, tmp_tgt_feat_2, cfg)
+                loss_inter = loss_inter + self._gpa_inter_class_loss(tmp_tgt_feat_1, tmp_src_feat_2, cfg)
 
         # normalize losses
         loss_intra = loss_intra / class_ptt.size(0)
