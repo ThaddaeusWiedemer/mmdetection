@@ -580,37 +580,41 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
             * torch.pow(torch.max(margin - torch.sqrt(self._gpa_distance(feat_a, feat_b)), torch.tensor(0).float().cuda()), 2.0)
         return out
 
-    def _gpa_loss(self,
-                  feat,
-                  cls_prob,
-                  rois,
-                  gt_bboxes,
-                  gt_labels,
-                  feat_tgt,
-                  cls_prob_tgt,
-                  rois_tgt,
-                  gt_bboxes_tgt,
-                  gt_labels_tgt,
-                  batch_size,
-                  epsilon=1e-6):
+    # def _gpa_loss(self,
+    #               feat,
+    #               cls_prob,
+    #               rois,
+    #               gt_bboxes,
+    #               gt_labels,
+    #               feat_tgt,
+    #               cls_prob_tgt,
+    #               rois_tgt,
+    #               gt_bboxes_tgt,
+    #               gt_labels_tgt,
+    #               batch_size,
+    #               epsilon=1e-6):
+    def _gpa_loss(self, feat_src, feat_tgt, inputs, cfg)
         """Graph-based prototpye daptation loss as in https://github.com/ChrisAllenMing/GPA-detection.
         """
-        use_graph = self.gpa_cfg.get('use_graph', True)
-        normalize = self.gpa_cfg.get('normalize', False)
+        use_graph = cfg.get('use_graph', True)
+        normalize = cfg.get('normalize', False)
+        epsilon = cfg.get('epsilon', 1e-6)
 
         # view inputs as (batch_size, roi_sampler_num, )
         # with dimensions (batch_size, roi_sampler_num, num_feat)
-        feat = feat.view(batch_size, feat.size(0) // batch_size, feat.size(1))
-        feat_tgt = feat_tgt.view(batch_size, feat_tgt.size(0) // batch_size, feat_tgt.size(1))
+        feat_src = feat_src.view(batch_size, -1, feat_src.size(1))
+        feat_tgt = feat_tgt.view(batch_size, -1, feat_tgt.size(1))
 
         # get the class probability of every class for source and target domains
         # with dimensions (batch_size, roi_sampler_num, num_feat)
-        cls_prob = cls_prob.view(batch_size, cls_prob.size(0) // batch_size, cls_prob.size(1))
-        cls_prob_tgt = cls_prob_tgt.view(batch_size, cls_prob_tgt.size(0) // batch_size, cls_prob_tgt.size(1))
+        cls_prob_src, cls_prob_tgt = inputs['cls_score']
+        cls_prob_src = cls_prob_src.view(batch_size, -1, cls_prob_src.size(1))
+        cls_prob_tgt = cls_prob_tgt.view(batch_size, -1, cls_prob_tgt.size(1))
 
         # view rois as (batch_size, roi_sampler_num, 5)
-        rois = rois.view(batch_size, rois.size(0) // batch_size, rois.size(1))
-        rois_tgt = rois_tgt.view(batch_size, rois_tgt.size(0) // batch_size, rois_tgt.size(1))
+        rois_src, rois_tgt = inputs['rois']
+        rois_src = rois_src.view(batch_size, -1, rois_src.size(1))
+        rois_tgt = rois_tgt.view(batch_size, -1, rois_tgt.size(1))
 
         num_classes = cls_prob.size(2)
         class_ptt = list()
@@ -618,12 +622,14 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
 
         for i in range(num_classes):
             tmp_cls_prob = cls_prob[:, :, i].view(cls_prob.size(0), cls_prob.size(1), 1)
-            if invert_cls_prob:
-                tmp_cls_prob = 1 - tmp_cls_prob  # this is useless with 2 classes, it just switches the classes
+            # if invert_cls_prob:
+            #     tmp_cls_prob = 1 - tmp_cls_prob  # this is useless with 2 classes, it just switches the classes
+            # TODO instead of using class probability to assing ROIs to each class, use 25% and 75% IoU with ground-truth
             tmp_class_feat = feat * tmp_cls_prob  # weigh features with class probability
             tmp_feat = list()
             tmp_weight = list()
 
+            # build per-image class prototypes
             for j in range(batch_size):
                 tmp_batch_feat_ = tmp_class_feat[j, :, :]
                 tmp_batch_weight_ = tmp_cls_prob[j, :, :]
@@ -646,7 +652,7 @@ class TwoStageDetectorAdaptive(BaseDetectorAdaptive):
                     tmp_feat.append(tmp_batch_feat_)
                     tmp_weight.append(tmp_batch_weight_)
 
-            # per-image prototypes and corresponding probabilities
+            # build final class prototypes and normalize by class probability
             tmp_class_feat_ = torch.stack(tmp_feat, dim=0)
             tmp_class_weight = torch.stack(tmp_weight, dim=0)
             tmp_class_feat = torch.sum(torch.sum(tmp_class_feat_, dim=1),
