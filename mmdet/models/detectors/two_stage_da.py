@@ -75,7 +75,7 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
             roi_out_size = roi_head['bbox_roi_extractor']['roi_layer']['output_size']
             feat_shapes.update({'roi': [roi_out_channels, roi_out_size, roi_out_size]})
 
-            feat_shapes.update({'rcnn': [roi_head['bbox_head']['fc_out_channels']]})
+            feat_shapes.update({'rcnn': [roi_head['bbox_head']['fc_out_channels'], 1, 1]})
 
         # define all domain adaptation modules
         self.da_heads = nn.ModuleDict()  # use ModuleDict instead of dict to register all layers to the model
@@ -305,50 +305,50 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
         self.first_iter = False
         return losses
 
-    def _adversarial(self, inputs, classifier, cfg):
-        # get feature maps to align
-        feat = cfg['feat']
-        try:
-            feat_src, feat_tgt = inputs[feat]
-        except KeyError:
-            print(f"`{feat} is not a valid input for an adaptation module")
-        # features have shape (N, F), where N is either batch size or number of regions. We combine them into a single tensor with shape (2*N, F)
-        feat_src = feat_src.view(feat_src.size(0), -1)
-        feat_tgt = feat_tgt.view(feat_tgt.size(0), -1)
-        feats = torch.cat((feat_src, feat_tgt), dim=0)
+    # def _adversarial(self, inputs, classifier, cfg):
+    #     # get feature maps to align
+    #     feat = cfg['feat']
+    #     try:
+    #         feat_src, feat_tgt = inputs[feat]
+    #     except KeyError:
+    #         print(f"`{feat} is not a valid input for an adaptation module")
+    #     # features have shape (N, F), where N is either batch size or number of regions. We combine them into a single tensor with shape (2*N, F)
+    #     feat_src = feat_src.view(feat_src.size(0), -1)
+    #     feat_tgt = feat_tgt.view(feat_tgt.size(0), -1)
+    #     feats = torch.cat((feat_src, feat_tgt), dim=0)
 
-        # set lambda (weight of gradient after reversal) according to config
-        def isfloat(value):
-            try:
-                float(value)
-                return True
-            except ValueError:
-                return False
+    #     # set lambda (weight of gradient after reversal) according to config
+    #     def isfloat(value):
+    #         try:
+    #             float(value)
+    #             return True
+    #         except ValueError:
+    #             return False
 
-        mode = cfg.get('lambd', 1.0)
-        if mode == 'incr':
-            p = float(self.iter) / 40 / 2
-            lambd = 2. / (1. + np.exp(-10 * p)) - 1
-            self.iter += 1
-        elif mode == 'coupled':
-            lambd = math.exp(-self.prev_loss[feat])
-        elif isfloat(mode):
-            lambd = mode
-        else:
-            raise KeyError(f'adversarial lambda-mode has to be one of [`const`, `incr`, (float)], but is `{mode}`')
+    #     mode = cfg.get('lambd', 1.0)
+    #     if mode == 'incr':
+    #         p = float(self.iter) / 40 / 2
+    #         lambd = 2. / (1. + np.exp(-10 * p)) - 1
+    #         self.iter += 1
+    #     elif mode == 'coupled':
+    #         lambd = math.exp(-self.prev_loss[feat])
+    #     elif isfloat(mode):
+    #         lambd = mode
+    #     else:
+    #         raise KeyError(f'adversarial lambda-mode has to be one of [`const`, `incr`, (float)], but is `{mode}`')
 
-        # apply gradient reverse layer and domain classifier
-        out = classifier(GradReverse.apply(feats, lambd))
+    #     # apply gradient reverse layer and domain classifier
+    #     out = classifier(GradReverse.apply(feats, lambd))
 
-        # build classification targets of shape (2*N) with entries 0: source, 1: target
-        target = torch.cat((torch.zeros(feat_src.size(0)), torch.ones(feat_tgt.size(0))), dim=0).long().cuda()
+    #     # build classification targets of shape (2*N) with entries 0: source, 1: target
+    #     target = torch.cat((torch.zeros(feat_src.size(0)), torch.ones(feat_tgt.size(0))), dim=0).long().cuda()
 
-        # calculate loss
-        loss = nn.NLLLoss()(out, target)
+    #     # calculate loss
+    #     loss = nn.NLLLoss()(out, target)
 
-        if mode == 'coupled':
-            self.prev_loss[feat] = loss
-        return {f'loss_{feat}_adversarial': loss}
+    #     if mode == 'coupled':
+    #         self.prev_loss[feat] = loss
+    #     return {f'loss_{feat}_adversarial': loss}
 
     async def async_simple_test(self, img, img_meta, proposals=None, rescale=False):
         """Async test without augmentation."""
