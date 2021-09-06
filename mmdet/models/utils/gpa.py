@@ -112,10 +112,10 @@ class GPAHead(BaseModule):
                 ptt_src_2 = ptt_src[j, :]
                 ptt_tgt_2 = ptt_tgt[j, :]
 
-                loss_inter = loss_inter + self._inter_class_loss(ptt_src_1, ptt_src_2)
-                loss_inter = loss_inter + self._inter_class_loss(ptt_tgt_1, ptt_tgt_2)
-                loss_inter = loss_inter + self._inter_class_loss(ptt_src_1, ptt_tgt_2)
-                loss_inter = loss_inter + self._inter_class_loss(ptt_tgt_1, ptt_src_2)
+                loss_inter = loss_inter + self._loss_inter(ptt_src_1, ptt_src_2)
+                loss_inter = loss_inter + self._loss_inter(ptt_tgt_1, ptt_tgt_2)
+                loss_inter = loss_inter + self._loss_inter(ptt_src_1, ptt_tgt_2)
+                loss_inter = loss_inter + self._loss_inter(ptt_tgt_1, ptt_src_2)
 
         # normalize losses
         loss_intra = loss_intra / ptt_src.size(0)
@@ -282,7 +282,7 @@ class GPAHead(BaseModule):
 
         return iou
 
-    def _inter_loss(self, x1, x2):
+    def _loss_inter(self, x1, x2):
         # could use F.relu to write more concisely
         loss = torch.pow((self.margin - torch.sqrt(self._distance(x1, x2))) / self.margin, 2) \
             * torch.pow(torch.max(self.margin - torch.sqrt(self._distance(x1, x2)), torch.tensor(0).float().cuda()), 2.0)

@@ -59,15 +59,6 @@ model = dict(
                  use_graph=True,
                  layer='fc_layer')
         ],
-        gpa=dict(
-            loss_roi_intra=10.0,  # loss for domain adaptation after roi
-            loss_roi_inter=0.1,  # loss for domain adaptation in rcnn head
-            loss_rcnn_intra=100.0,  # loss for domain adaptation intra-class loss compared to inter-class loss
-            loss_rcnn_inter=0.1,  # loss for domain adaptation inter-class loss compared to intra-class loss
-            distance='mean_squared',  # distance function for domain adaptation losses
-            normalize=False,  # normalize weights when building instance prototypes
-            use_graph=True,  # whether to use adjacency matrix for aggregation of instance prototypes
-            fc_layer='fc_layer'),
         rpn=dict(assigner=dict(type='MaxIoUAssigner',
                                pos_iou_thr=0.7,
                                neg_iou_thr=0.3,

@@ -1,8 +1,8 @@
+from .grad_reverse import GradReverse
 from .adversarial import AdversarialHead
 from .builder import build_linear_layer, build_transformer
 from .gaussian_target import gaussian_radius, gen_gaussian_target
 from .gpa import GPAHead
-from .grad_reverse import GradReverse
 from .inverted_residual import InvertedResidual
 from .make_divisible import make_divisible
 from .normed_predictor import NormedConv2d, NormedLinear
