@@ -13,7 +13,7 @@ class GPAHead(BaseModule):
 
         # get config info
         self.feat = cfg.get('feat', 'roi')
-        assert self.feat in ['roi', 'rcnn'
+        assert self.feat in ['feat_roi', 'feat_rcnn_shared', 'feat_rcnn_cls', 'feat_rcnn_bbox'
                              ], f'GPA can only be used for ROI or RCNN features, but was defined for `{self.feat}`'
         self.use_graph = cfg.get('use_graph', True)
         self.normalize = cfg.get('normalize', False)
@@ -25,7 +25,7 @@ class GPAHead(BaseModule):
 
         # build layer
         layer_type = cfg.get('layer', 'fc_layer')
-        in_shapes = {'roi': 128, 'rcnn': 64}
+        in_shapes = {'feat_roi': 128, 'feat_rcnn_shared': 64, 'feat_rcnn_cls': 64, 'feat_rcnn_bbox': 64}
         if layer_type == 'fc_layer':
             self.layer = nn.Linear(math.prod(in_shape), in_shapes[self.feat])
         elif layer_type == 'avgpool':
@@ -75,7 +75,7 @@ class GPAHead(BaseModule):
 
         # get the class probability of every class for source and target domains
         # with dimensions (batch_size, roi_sampler_num, num_feat)
-        cls_src, cls_tgt = inputs['cls']
+        cls_src, cls_tgt = inputs['cls_score']
         cls_src = cls_src.view(self.batch_size, -1, cls_src.size(1))
         cls_tgt = cls_tgt.view(self.batch_size, -1, cls_tgt.size(1))
 

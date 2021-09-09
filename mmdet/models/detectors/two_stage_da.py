@@ -73,9 +73,11 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
 
             roi_out_channels = roi_head['bbox_roi_extractor']['out_channels']
             roi_out_size = roi_head['bbox_roi_extractor']['roi_layer']['output_size']
-            feat_shapes.update({'roi': [roi_out_channels, roi_out_size, roi_out_size]})
+            feat_shapes.update({'feat_roi': [roi_out_channels, roi_out_size, roi_out_size]})
 
-            feat_shapes.update({'rcnn': [roi_head['bbox_head']['fc_out_channels'], 1, 1]})
+            feat_shapes.update({'feat_rcnn_shared': [roi_head['bbox_head']['fc_out_channels'], 1, 1]})
+            feat_shapes.update({'feat_rcnn_cls': [roi_head['bbox_head']['fc_out_channels'], 1, 1]})
+            feat_shapes.update({'feat_rcnn_bbox': [roi_head['bbox_head']['fc_out_channels'], 1, 1]})
 
         # define all domain adaptation modules
         self.da_heads = nn.ModuleDict()  # use ModuleDict instead of dict to register all layers to the model
@@ -198,7 +200,7 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
         x_tgt = self.extract_feat(img_tgt)
         for i, (_x_src, _x_tgt) in enumerate(zip(x_src, x_tgt)):
             # print(f'features in neck {i}: {_x_src.size()}')
-            feats.update({f'neck_{i}': (_x_src, _x_tgt)})
+            feats.update({f'feat_neck_{i}': (_x_src, _x_tgt)})
 
         # RPN forward and loss (class and bbox) in both domains
         if self.with_rpn:
@@ -224,26 +226,16 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
             proposal_list = proposals
 
         # get sampled ROIs, features in head, class score, and losses (class and bbox) in both domains
-        roi_losses_src, rois_src, roi_src, rcnn_src, cls_src = self.roi_head.forward_train(
-            x_src, img_metas, proposals_src, gt_bboxes, gt_labels, gt_bboxes_ignore, gt_masks, **kwargs)
-        roi_losses_tgt, rois_tgt, roi_tgt, rcnn_tgt, cls_tgt = self.roi_head.forward_train(
-            x_tgt, img_metas_tgt, proposals_tgt, gt_bboxes_tgt, gt_labels_tgt, gt_bboxes_ignore, gt_masks, **kwargs)
+        roi_losses_src, bbox_results_src = self.roi_head.forward_train(x_src, img_metas, proposals_src, gt_bboxes,
+                                                                       gt_labels, gt_bboxes_ignore, gt_masks, **kwargs)
+        roi_losses_tgt, bbox_results_tgt = self.roi_head.forward_train(x_tgt, img_metas_tgt, proposals_tgt,
+                                                                       gt_bboxes_tgt, gt_labels_tgt, gt_bboxes_ignore,
+                                                                       gt_masks, **kwargs)
         # save everything for domain adaptation
-        # TODO also save final bbox
-        feats.update({
-            'rois': (rois_src, rois_tgt),
-            'roi': (roi_src, roi_tgt),
-            'rcnn': (rcnn_src, rcnn_tgt),
-            'cls': (cls_src, cls_tgt)
-        })
+        for key in bbox_results_src.keys():
+            feats.update({key: (bbox_results_src[key], bbox_results_tgt[key])})
         losses.update(roi_losses_src)
         losses.update(roi_losses_tgt)
-
-        # adapting on features after ROI and after RCNN only makes a difference when the ROI-head has shared
-        # layers
-        if roi_src.size() == rcnn_src.size() and torch.eq(roi_src, rcnn_src).all():
-            warnings.warn('The features for domain adaptation after ROI and RCNN are the same, the model might not be\
-                using a shared head')
 
         if self.with_da:
             # do domain adaptation
