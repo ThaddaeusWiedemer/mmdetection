@@ -43,8 +43,9 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
         if self.train_cfg is not None:
-            self.da_cfg = train_cfg.get('da', None)
+            self.da_cfg = self.train_cfg.get('da', None)
             self.with_da = self.da_cfg is not None
+            self.train_source = self.train_cfg.get('train_source', False)
 
         self.first_iter = True
         self.iter = 0
@@ -219,8 +220,9 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
                                                                         proposal_cfg=proposal_cfg)
             # save everything for domain adaptation
             feats.update({'proposals': (proposals_src, proposals_tgt)})
-            losses.update(rpn_losses_src)
-            losses.update(rpn_losses_tgt)
+            if self.train_source:
+                losses.update([(f'{k}_src', v) for k, v in rpn_losses_src.items()])
+            losses.update([(f'{k}_tgt', v) for k, v in rpn_losses_tgt.items()])
         else:
             raise NotImplementedError('Two stage domain-adaptive detector only works with RPN for now')
             proposal_list = proposals
@@ -234,8 +236,9 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
         # save everything for domain adaptation
         for key in bbox_results_src.keys():
             feats.update({key: (bbox_results_src[key], bbox_results_tgt[key])})
-        losses.update(roi_losses_src)
-        losses.update(roi_losses_tgt)
+        if self.train_source:
+            losses.update([(f'{k}_src', v) for k, v in roi_losses_src.items()])
+        losses.update([(f'{k}_tgt', v) for k, v in roi_losses_tgt.items()])
 
         if self.with_da:
             # do domain adaptation
@@ -274,9 +277,9 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
         Returns:
             dict[str, Tensor]: re-weighted network losses
         """
-        # if self.first_iter:
-        #     print('LOSSES:')
-        #     print(losses)
+        if self.first_iter:
+            print('LOSSES:')
+            print(losses)
 
         for module in self.da_cfg:
             name = module['type']

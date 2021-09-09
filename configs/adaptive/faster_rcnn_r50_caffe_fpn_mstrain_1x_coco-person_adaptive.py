@@ -42,6 +42,7 @@ model = dict(
             loss_cls=dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
             loss_bbox=dict(type='L1Loss', loss_weight=1.0))),
     train_cfg=dict(
+        train_source=True,
         da=[
             # dict(type='adversarial',
             #      feat='neck_4',
