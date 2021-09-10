@@ -40,29 +40,6 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
             rpn_head_.update(train_cfg=rpn_train_cfg, test_cfg=test_cfg.rpn)
             self.rpn_head = build_head(rpn_head_)
 
-        self.train_cfg = train_cfg
-        self.test_cfg = test_cfg
-        if self.train_cfg is not None:
-            self.da_cfg = self.train_cfg.get('da', None)
-            self.with_da = self.da_cfg is not None
-            self.train_source = self.train_cfg.get('train_source', False)
-
-        self.first_iter = True
-        self.iter = 0
-        self.prev_loss = dict()
-
-        # TODO get backbone stages and neck output shape
-        feat_shapes = dict()
-        # feat_shapes.update([(f'backbone_{i}', [ch] for i, ch in enumerate([neck['in_channels']]))])
-        neck_out = neck['out_channels']
-        feat_shapes.update({
-            'neck_0': [neck_out, 200, 200],
-            'neck_1': [neck_out, 100, 100],
-            'neck_2': [neck_out, 50, 50],
-            'neck_3': [neck_out, 25, 25],
-            'neck_4': [neck_out, 13, 13]
-        })
-
         if roi_head is not None:
             # update train and test cfg here for now
             # TODO: refactor assigner & sampler
@@ -72,6 +49,31 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
             roi_head.pretrained = pretrained
             self.roi_head = build_head(roi_head)
 
+        self.train_cfg = train_cfg
+        self.test_cfg = test_cfg
+
+        # all domain adaptation is only relevant during training
+        if self.train_cfg is not None:
+            self.da_cfg = self.train_cfg.get('da', None)
+            self.with_da = self.da_cfg is not None
+            self.train_source = self.train_cfg.get('train_source', False)
+
+            self.first_iter = True
+            self.iter = 0
+            self.prev_loss = dict()
+
+            # TODO get backbone stages and neck output shape
+            feat_shapes = dict()
+            # feat_shapes.update([(f'backbone_{i}', [ch] for i, ch in enumerate([neck['in_channels']]))])
+            neck_out = neck['out_channels']
+            feat_shapes.update({
+                'neck_0': [neck_out, 200, 200],
+                'neck_1': [neck_out, 100, 100],
+                'neck_2': [neck_out, 50, 50],
+                'neck_3': [neck_out, 25, 25],
+                'neck_4': [neck_out, 13, 13]
+            })
+
             roi_out_channels = roi_head['bbox_roi_extractor']['out_channels']
             roi_out_size = roi_head['bbox_roi_extractor']['roi_layer']['output_size']
             feat_shapes.update({'feat_roi': [roi_out_channels, roi_out_size, roi_out_size]})
@@ -80,23 +82,23 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
             feat_shapes.update({'feat_rcnn_cls': [roi_head['bbox_head']['fc_out_channels'], 1, 1]})
             feat_shapes.update({'feat_rcnn_bbox': [roi_head['bbox_head']['fc_out_channels'], 1, 1]})
 
-        # define all domain adaptation modules
-        self.da_heads = nn.ModuleDict()  # use ModuleDict instead of dict to register all layers to the model
-        for module in self.da_cfg:
-            name = module.get('type', None)
-            feat = module.get('feat', None)
-            assert name is not None, 'a type must be specified for each domain adaptation module'
-            assert feat is not None, f'domain adaptation module `{name}` did not specify input features'
+            # define all domain adaptation modules
+            self.da_heads = nn.ModuleDict()  # use ModuleDict instead of dict to register all layers to the model
+            for module in self.da_cfg:
+                name = module.get('type', None)
+                feat = module.get('feat', None)
+                assert name is not None, 'a type must be specified for each domain adaptation module'
+                assert feat is not None, f'domain adaptation module `{name}` did not specify input features'
 
-            # GPA uses one layer to reduce feature dimension
-            if name == 'gpa':
-                da_head = GPAHead(module, feat_shapes[feat])
+                # GPA uses one layer to reduce feature dimension
+                if name == 'gpa':
+                    da_head = GPAHead(module, feat_shapes[feat])
 
-            # adversarial domain adaptation needs a domain classifier
-            elif name == 'adversarial':
-                da_head = AdversarialHead(module, feat_shapes[feat])
+                # adversarial domain adaptation needs a domain classifier
+                elif name == 'adversarial':
+                    da_head = AdversarialHead(module, feat_shapes[feat])
 
-            self.da_heads.update({f'{feat}_{name}': da_head})
+                self.da_heads.update({f'{feat}_{name}': da_head})
 
     @property
     def with_rpn(self):
