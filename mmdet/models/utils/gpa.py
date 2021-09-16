@@ -23,8 +23,8 @@ class GPAHead(BaseModule):
         self.distance = cfg.get('distance', 'mean_squared')  # distance function for contrastive loss
         assert self.distance in distances, f'distance for GPA must be one of {distances}, but got {self.distance}'
         self.mode = cfg.get('mode', 'prediction')  # what information to use to build prototypes
-        self.gt_iou_thrs = cfg.get('gt_iou_thrs', (.7, .3))  # IoU thresholds for ground-truth-based prototypes
-        self.thrs_mode = cfg.get('thrs_mode', 'cut_off')  # how to treat thresholding to generate weights
+        self.gt_iou_thrs = cfg.get('gt_iou_thrs', (.75, .25))  # IoU thresholds for ground-truth-based prototypes
+        self.thr_mode = cfg.get('thr_mode', 'cut_off')  # how to treat thresholding to generate weights
 
         # build input layer to reduce feature size
         layer_type = cfg.get('layer', 'fc_layer')
@@ -355,9 +355,9 @@ class GPAHead(BaseModule):
         else:
             iou[iou > iou_thr] = 0
 
-        if self.thrs_mode == 'step':
+        if self.thr_mode == 'step':
             iou[iou != 0] = 1
-        elif self.thrs_mode == 'invert':
+        elif self.thr_mode == 'invers':
             iou = 1 - iou
             iou[iou == 1] = 0
 
