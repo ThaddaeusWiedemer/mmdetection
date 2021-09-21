@@ -67,11 +67,11 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
             # feat_shapes.update([(f'backbone_{i}', [ch] for i, ch in enumerate([neck['in_channels']]))])
             neck_out = neck['out_channels']
             feat_shapes.update({
-                'neck_0': [neck_out, 200, 200],
-                'neck_1': [neck_out, 100, 100],
-                'neck_2': [neck_out, 50, 50],
-                'neck_3': [neck_out, 25, 25],
-                'neck_4': [neck_out, 13, 13]
+                'feat_neck_0': [neck_out, 200, 200],
+                'feat_neck_1': [neck_out, 100, 100],
+                'feat_neck_2': [neck_out, 50, 50],
+                'feat_neck_3': [neck_out, 25, 25],
+                'feat_neck_4': [neck_out, 13, 13]
             })
 
             roi_out_channels = roi_head['bbox_roi_extractor']['out_channels']

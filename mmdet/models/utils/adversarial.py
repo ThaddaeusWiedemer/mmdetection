@@ -27,6 +27,8 @@ class AdversarialHead(BaseModule):
         self.mode = cfg.get('mode', 'none')
         self.n_sample = cfg.get('n_sample', 16)
         self.sample_shape = cfg.get('sample_shape', (7, 7))
+        if isinstance(self.sample_shape, int):
+            self.sample_shape = (self.sample_shape, self.sample_shape)
 
         # keep track of loss and iteration to compute lambda
         self.prev_loss = 0.
@@ -159,6 +161,7 @@ class RandomCrop(BaseModule):
         """
         super(RandomCrop, self).__init__(init_cfg=init_cfg)
         self.n = n
+        assert isinstance(shape, tuple), 'shape must be a tuple of (int, int)'
         self.shape = shape
         self.concat_out = concat_out
 
