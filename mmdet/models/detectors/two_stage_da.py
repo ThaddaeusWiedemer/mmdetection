@@ -190,6 +190,7 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
         feats = dict()
         feats.update({
             'img': (img, img_tgt),
+            'img_metas': (img_metas, img_metas_tgt),
             'gt_bboxes': (gt_bboxes, gt_bboxes_tgt),
             'gt_labels': (gt_labels, gt_labels_tgt)
         })

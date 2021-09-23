@@ -93,7 +93,7 @@ class GPAHead(BaseModule):
             ptt_tgt = self._build_ptt_cls_pred(x_tgt, cls_tgt, rois_tgt)
 
         elif self.mode == 'ground_truth':
-            # get ground-truths as list(Tensor(B, 4))
+            # get ground-truths as list(Tensor(B, G, 4)) with G number of ground-truths
             gt_src, gt_tgt = inputs['gt_bboxes']
 
             ptt_src = self._build_ptt_cls_gt(x_src, gt_src, rois_src, self.gt_iou_thrs)
@@ -190,7 +190,7 @@ class GPAHead(BaseModule):
 
         Args:
             x (Tensor): features of size (batch size, number of ROIs, feature size)
-            gts (Tensor): ground-truths as (batch size, coordinates)
+            gts (Tensor): ground-truths as (batch size, num of gts, coordinates)
             rois (Tensor): meta information of each ROI as (batch size, number of ROIs, coordinates)
 
         Returns:

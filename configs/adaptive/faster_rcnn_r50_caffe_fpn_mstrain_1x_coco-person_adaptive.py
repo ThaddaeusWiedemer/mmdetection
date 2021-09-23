@@ -24,7 +24,7 @@ model = dict(
                   loss_cls=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
                   loss_bbox=dict(type='L1Loss', loss_weight=1.0)),
     roi_head=dict(
-        type='StandardRoIHeadAdaptive',  # special head that returns more information
+        type='SplitRoIHeadAdaptive',  # special head that returns more information
         bbox_roi_extractor=dict(type='SingleRoIExtractor',
                                 roi_layer=dict(type='RoIAlign', output_size=7, sampling_ratio=0),
                                 out_channels=256,
@@ -44,35 +44,38 @@ model = dict(
     train_cfg=dict(
         train_source=False,
         da=[
-            dict(type='adversarial',
-                 feat='feat_neck_0',
-                 loss_weights=dict(adversarial=1.0),
-                 lambd='coupled',
-                 transform='sample',
-                 n_sample=16,
-                 sample_shape=(7, 7)),
-            # dict(type='adversarial',
-            #      feat='feat_neck_3',
-            #      loss_weights=dict(adversarial=1.0),
-            #      lambd='coupled',
-            #      transform='sample'),
-            # dict(type='adversarial',
-            #      feat='feat_neck_2',
-            #      loss_weights=dict(adversarial=1.0),
-            #      lambd='coupled',
-            #      transform='sample'),
-            # dict(type='adversarial',
-            #      feat='feat_neck_1',
-            #      loss_weights=dict(adversarial=1.0),
-            #      lambd='coupled',
-            #      transform='sample'),
             # dict(type='adversarial',
             #      feat='feat_neck_0',
             #      loss_weights=dict(adversarial=1.0),
-            #      lambd='coupled',
-            #      transform='sample'),
+            #      lambd_weight=.33,
+            #      transform='sample',
+            #      sample_shape=19),
+            # dict(type='adversarial',
+            #      feat='feat_neck_1',
+            #      loss_weights=dict(adversarial=1.0),
+            #      lambd_weight=.2,
+            #      transform='sample',
+            #      sample_shape=16),
+            # dict(type='adversarial',
+            #      feat='feat_neck_2',
+            #      loss_weights=dict(adversarial=1.0),
+            #      lambd_weight=.33,
+            #      transform='sample',
+            #      sample_shape=13),
+            # dict(type='adversarial',
+            #      feat='feat_neck_3',
+            #      loss_weights=dict(adversarial=1.0),
+            #      lambd_weight=.2,
+            #      transform='sample',
+            #      sample_shape=10),
+            # dict(type='adversarial',
+            #      feat='feat_neck_4',
+            #      loss_weights=dict(adversarial=1.0),
+            #      lambd_weight=.33,
+            #      transform='sample',
+            #      sample_shape=7),
             # dict(type='gpa', feat='feat_roi', loss_weights=dict(intra=10.0, inter=0.1), mode='ground_truth'),
-            # dict(type='gpa', feat='feat_rcnn_cls', loss_weights=dict(intra=100.0, inter=0.1), mode='ground_truth'),
+            dict(type='gpa', feat='feat_rcnn_cls', loss_weights=dict(intra=100.0, inter=0.1), mode='ground_truth'),
             # dict(type='gpa', feat='feat_rcnn_bbox', loss_weights=dict(intra=100.0, inter=0.1), mode='ground_truth')
         ],
         rpn=dict(assigner=dict(type='MaxIoUAssigner',
@@ -233,7 +236,7 @@ lr_config = dict(
     step=[200])  # i.e. no step
 # change to iteration based runner with 1776*x iterations for training on PIROPO
 runner = dict(type='EpochBasedRunnerAdaptive', max_epochs=40)  # use adaptive runner that loads 2 datasets
-checkpoint_config = dict(interval=200)  # for iter-based runner use 1776 or similar
+checkpoint_config = dict(interval=200)  # i.e. no additional checkpoints
 log_config = dict(interval=1, hooks=[dict(type='TextLoggerHook')])
 custom_hooks = [dict(type='NumClassCheckHook')]
 dist_params = dict(backend='nccl')
