@@ -24,13 +24,13 @@ model = dict(
                   loss_cls=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
                   loss_bbox=dict(type='L1Loss', loss_weight=1.0)),
     roi_head=dict(
-        type='SplitRoIHeadAdaptive',  # special head that returns more information
+        type='StandardRoIHeadAdaptive',  # special head that returns more information
         bbox_roi_extractor=dict(type='SingleRoIExtractor',
                                 roi_layer=dict(type='RoIAlign', output_size=7, sampling_ratio=0),
                                 out_channels=256,
                                 featmap_strides=[4, 8, 16, 32]),
         bbox_head=dict(
-            type='Shared2FCBBoxHeadAdaptive',
+            type='Split2FCBBoxHeadAdaptive',
             in_channels=256,
             fc_out_channels=1024,
             roi_feat_size=7,
@@ -74,9 +74,44 @@ model = dict(
             #      lambd_weight=.33,
             #      transform='sample',
             #      sample_shape=7),
-            # dict(type='gpa', feat='feat_roi', loss_weights=dict(intra=10.0, inter=0.1), mode='ground_truth'),
-            dict(type='gpa', feat='feat_rcnn_cls', loss_weights=dict(intra=100.0, inter=0.1), mode='ground_truth'),
-            # dict(type='gpa', feat='feat_rcnn_bbox', loss_weights=dict(intra=100.0, inter=0.1), mode='ground_truth')
+            dict(type='gpa', feat='feat_roi', loss_weights=dict(intra=10.0, inter=0.1), mode='prediction', lambd=.33),
+            dict(type='gpa',
+                 feat='feat_rcnn_cls',
+                 loss_weights=dict(intra=100.0, inter=0.1),
+                 mode='ground_truth',
+                 lambd=.33),
+            dict(type='gpa',
+                 tag='x',
+                 feat='feat_rcnn_bbox',
+                 loss_weights=dict(intra=100.0, inter=0.1),
+                 mode='gt_bbox',
+                 gt_iou_thrs=0.5,
+                 gt_bbox_dim='x',
+                 lambd=.0825),
+            dict(type='gpa',
+                 tag='y',
+                 feat='feat_rcnn_bbox',
+                 loss_weights=dict(intra=100.0, inter=0.1),
+                 mode='gt_bbox',
+                 gt_iou_thrs=0.5,
+                 gt_bbox_dim='y',
+                 lambd=.0825),
+            dict(type='gpa',
+                 tag='w',
+                 feat='feat_rcnn_bbox',
+                 loss_weights=dict(intra=100.0, inter=0.1),
+                 mode='gt_bbox',
+                 gt_iou_thrs=0.5,
+                 gt_bbox_dim='w',
+                 lambd=.0825),
+            dict(type='gpa',
+                 tag='h',
+                 feat='feat_rcnn_bbox',
+                 loss_weights=dict(intra=100.0, inter=0.1),
+                 mode='gt_bbox',
+                 gt_iou_thrs=0.5,
+                 gt_bbox_dim='h',
+                 lambd=.0825)
         ],
         rpn=dict(assigner=dict(type='MaxIoUAssigner',
                                pos_iou_thr=0.7,
@@ -241,7 +276,8 @@ log_config = dict(interval=1, hooks=[dict(type='TextLoggerHook')])
 custom_hooks = [dict(type='NumClassCheckHook')]
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
-load_from = 'mmdetection/checkpoints/faster_rcnn_r50_fpn_1x_coco-person_20201216_175929-d022e227.pth'
+# load_from = 'mmdetection/checkpoints/faster_rcnn_r50_fpn_1x_coco-person_20201216_175929-d022e227.pth'
+load_from = 'mmdetection/checkpoints/faster_rcnn_r50_fpn_1x_coco-person_20201216_175929-d022e227_split.pth'
 resume_from = None
 workflow = [('train', 1)]
 work_dir = 'work_dirs/da'

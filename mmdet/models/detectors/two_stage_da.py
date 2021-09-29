@@ -87,6 +87,8 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
             for module in self.da_cfg:
                 name = module.get('type', None)
                 feat = module.get('feat', None)
+                tag = module.get('tag', None)
+                tag = f'_{tag}' if tag is not None else ''
                 assert name is not None, 'a type must be specified for each domain adaptation module'
                 assert feat is not None, f'domain adaptation module `{name}` did not specify input features'
 
@@ -98,7 +100,7 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
                 elif name == 'adversarial':
                     da_head = AdversarialHead(module, feat_shapes[feat])
 
-                self.da_heads.update({f'{feat}_{name}': da_head})
+                self.da_heads.update({f'{feat}_{name}{tag}': da_head})
 
     @property
     def with_rpn(self):
@@ -267,7 +269,9 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
 
         # call every module function and collect losses
         for module in self.da_cfg:
-            losses.update(self.da_heads[f"{module['feat']}_{module['type']}"](feats))
+            tag = module.get('tag', None)
+            tag = f'_{tag}' if tag is not None else ''
+            losses.update(self.da_heads[f"{module['feat']}_{module['type']}{tag}"](feats))
 
         return losses
 
@@ -287,13 +291,15 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
         for module in self.da_cfg:
             name = module['type']
             feat = module['feat']
+            tag = module.get('tag', None)
+            tag = f'_{tag}' if tag is not None else ''
             for loss, weight in module.loss_weights.items():
                 # ignore if weight = 1.0
                 if weight == 1.0:
                     break
                 # update all losses that match the 'location_type_loss' substring
                 _losses = [(key, value * weight) for key, value in losses.items()
-                           if f'{feat}_{name}_{loss}' in key.lower()]
+                           if f'{feat}_{name}{tag}_{loss}' in key.lower()]
                 losses.update(_losses)
 
                 if self.first_iter:

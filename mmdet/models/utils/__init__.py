@@ -1,3 +1,4 @@
+from .grad_dampening import GradDampening
 from .grad_reverse import GradReverse
 from .adversarial import AdversarialHead
 from .builder import build_linear_layer, build_transformer
@@ -15,5 +16,5 @@ __all__ = [
     'ResLayer', 'gaussian_radius', 'gen_gaussian_target', 'DetrTransformerDecoderLayer', 'DetrTransformerDecoder',
     'Transformer', 'build_transformer', 'build_linear_layer', 'SinePositionalEncoding', 'LearnedPositionalEncoding',
     'DynamicConv', 'SimplifiedBasicBlock', 'NormedLinear', 'NormedConv2d', 'make_divisible', 'InvertedResidual',
-    'SELayer', 'GradReverse', 'AdversarialHead', 'GPAHead'
+    'SELayer', 'GradReverse', 'AdversarialHead', 'GPAHead', 'GradDampening'
 ]

@@ -19,6 +19,8 @@ class AdversarialHead(BaseModule):
 
         # get config info
         self.feat = cfg.get('feat', 'roi')
+        self.tag = cfg.get('tag', None)  # to allow for multiple heads on same features
+        self.tag = f'_{self.tag}' if self.tag is not None else ''
         self.lambd_mode = cfg.get('lambd', 'coupled')
         assert self.lambd_mode in ['incr', 'coupled'] or self._is_float(
             self.lambd_mode
@@ -133,7 +135,7 @@ class AdversarialHead(BaseModule):
         if self.lambd_mode == 'coupled':
             self.prev_loss = loss
 
-        return {f'loss_{self.feat}_adversarial': loss}
+        return {f'loss_{self.feat}_adversarial{self.tag}': loss}
 
     def _classify_domain(self, x_src, x_tgt, background=False):
         # flatten inputs for fc-layers
