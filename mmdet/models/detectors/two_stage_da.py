@@ -85,6 +85,8 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
             # define all domain adaptation modules
             self.da_heads = nn.ModuleDict()  # use ModuleDict instead of dict to register all layers to the model
             for module in self.da_cfg:
+                if module is None:
+                    continue
                 name = module.get('type', None)
                 feat = module.get('feat', None)
                 tag = module.get('tag', None)
@@ -269,6 +271,8 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
 
         # call every module function and collect losses
         for module in self.da_cfg:
+            if module is None:
+                continue
             tag = module.get('tag', None)
             tag = f'_{tag}' if tag is not None else ''
             losses.update(self.da_heads[f"{module['feat']}_{module['type']}{tag}"](feats))
@@ -289,6 +293,8 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
             print(losses)
 
         for module in self.da_cfg:
+            if module is None:
+                continue
             name = module['type']
             feat = module['feat']
             tag = module.get('tag', None)

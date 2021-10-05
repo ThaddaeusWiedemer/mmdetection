@@ -35,6 +35,8 @@ class AdversarialHead(BaseModule):
         if isinstance(self.sample_shape, int):
             self.sample_shape = (self.sample_shape, self.sample_shape)
         self.only_fg = cfg.get('only_fg', False)
+        self.schedule = cfg.get('schedule', None)
+        self.gt_iou_thrs = cfg.get('gt_iou_thrs', (.9, .1))
 
         # keep track of loss and iteration to compute lambda
         self.prev_loss = 0.
@@ -69,14 +71,16 @@ class AdversarialHead(BaseModule):
             self.classifier.add_module(f'dcls_{self.feat}_fc0', nn.Linear(in_shape[0], 128))
         elif self.trafo == 'sample':
             # take crops from feature map
-            self.transform.add_module(f'dcls_{self.feat}_crop', RandomCrop(self.n_sample, self.sample_shape))
+            self.transform.add_module(
+                f'dcls_{self.feat}_crop',
+                RandomCrop(self.n_sample, self.sample_shape, feat=self.feat, thrs=self.gt_iou_thrs))
             self.classifier.add_module(f'dcls_{self.feat}_fc0',
                                        nn.Linear(in_shape[0] * math.prod(self.sample_shape), 128))
         elif self.trafo == 'sample_gt':
             # take crops from feature map and label them as foreground or background trough ground-truth information
-            self.transform.add_module(f'dcls_{self.feat}_crop', RandomCrop(self.n_sample,
-                                                                           self.sample_shape,
-                                                                           use_gt=True))
+            self.transform.add_module(
+                f'dcls_{self.feat}_crop',
+                RandomCrop(self.n_sample, self.sample_shape, use_gt=True, feat=self.feat, thrs=self.gt_iou_thrs))
             self.classifier.add_module(f'dcls_{self.feat}_fc0',
                                        nn.Linear(in_shape[0] * math.prod(self.sample_shape), 128))
             if not self.only_fg:
@@ -162,6 +166,10 @@ class AdversarialHead(BaseModule):
         # apply weight to lambda independent of mode
         self.lambd *= self.lambd_weight
 
+        if self.schedule is not None:
+            if self.iter % self.schedule[0] == self.schedule[1]:
+                self.lambd = 0
+
         # apply gradient reverse layer and domain classifier
         if background:
             out = self.classifier_bg(GradReverse.apply(feats, self.lambd))
@@ -185,7 +193,7 @@ class AdversarialHead(BaseModule):
 
 
 class RandomCrop(BaseModule):
-    def __init__(self, n, shape, concat_out=True, init_cfg=None, use_gt=False):
+    def __init__(self, n, shape, concat_out=True, init_cfg=None, use_gt=False, feat=None, thrs=None):
         """Take `n` random crops of shape (h, w) from input tensor with shape (B, C, H, W).
 
         Args:
@@ -205,6 +213,8 @@ class RandomCrop(BaseModule):
         self.shape = shape
         self.concat_out = concat_out
         self.use_gt = use_gt
+        self.feat = feat
+        self.thrs = thrs
 
     def forward(self, x):
         if self.use_gt:
@@ -261,7 +271,7 @@ class RandomCrop(BaseModule):
             crops_batch = []
             crops_bg_batch = []
 
-            run_limit = 100000
+            run_limit = 10000
             run = 0
             while len(crops_batch) < self.n and run < run_limit:
                 run += 1
@@ -269,8 +279,8 @@ class RandomCrop(BaseModule):
                 _y = random.randint(0, x.size(3) - h)
                 # for any ground-truth: |gx - cx| <= d && |gy - cy| <= d
                 # where gx, gy, cx, cy are the coordinates of ground-truth and crop center points and d is distance
-                if torch.logical_and(torch.le(torch.abs(gts_x[i] - (_x + w / 2)), 0.05 * w),
-                                     torch.le(torch.abs(gts_y[i] - (_y + h / 2)), 0.05 * h)).any():
+                if torch.logical_and(torch.le(torch.abs(gts_x[i] - (_x + w / 2)), self.thrs[1] * w),
+                                     torch.le(torch.abs(gts_y[i] - (_y + h / 2)), self.thrs[1] * h)).any():
                     crops_batch.append(x[i, :, _x:_x + w, _y:_y + h])
             # print('ran', run, 'times')
 
@@ -281,8 +291,8 @@ class RandomCrop(BaseModule):
                 _y = random.randint(0, x.size(3) - h)
                 # for no ground-truth: |gx - cx| <= d && |gy - cy| <= d
                 if torch.logical_not(
-                        torch.logical_and(torch.le(torch.abs(gts_x[i] - (_x + w / 2)), 0.95 * w),
-                                          torch.le(torch.abs(gts_y[i] - (_y + h / 2)), 0.95 * h))).all():
+                        torch.logical_and(torch.le(torch.abs(gts_x[i] - (_x + w / 2)), self.thrs[0] * w),
+                                          torch.le(torch.abs(gts_y[i] - (_y + h / 2)), self.thrs[0] * h))).all():
                     crops_bg_batch.append(x[i, :, _x:_x + w, _y:_y + h])
             # print('ran', run, 'times')
 
@@ -291,12 +301,15 @@ class RandomCrop(BaseModule):
 
         # stack crops in batch-dimension
         if self.concat_out:
-            # in case no foreground/background crops were found withing the run_limit, pass on a 0-dimensional tensor
-            if not crops:
-                crops = [torch.empty((0, x.size(1), w, h)).cuda()]
-            if not crops_bg:
-                crops_bg = [torch.empty((0, x.size(1), w, h)).cuda()]
-            x = (torch.stack(crops, 0), torch.stack(crops_bg, 0))
+            # in case no foreground/background crops were found withing the run limit, pass on a 0-dimensional tensor
+            if crops and crops_bg:
+                x = (torch.stack(crops, 0), torch.stack(crops_bg, 0))
+            elif not crops:
+                warnings.warn(f'-- no foreground crops found on {self.feat} in this iteration --')
+                x = (torch.empty((0, x.size(1), w, h)).cuda(), torch.stack(crops_bg, 0))
+            elif not crops_bg:
+                warnings.warn(f'-- no background crops found on {self.feat} in this iteration --')
+                x = (torch.stack(crops, 0), torch.empty((0, x.size(1), w, h)).cuda())
         else:
             x = (crops, crops_bg)
 

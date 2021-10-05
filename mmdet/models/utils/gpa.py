@@ -31,6 +31,8 @@ class GPAHead(BaseModule):
         self.gt_use_cls = cfg.get('gt_use_cls', False)  # whether GPA with gt should use class prediction
         self.gt_bbox_dim = cfg.get('gt_bbox_dim', 'x')  # which dimension to use for bbox-based prototypes
         self.lambd = cfg.get('lambd', 1)  # factor on gradient
+        self.schedule = cfg.get('schedule', None)
+        self.iter = 0
 
         # build input layer to reduce feature size
         layer_type = cfg.get('layer', 'fc_layer')
@@ -55,8 +57,15 @@ class GPAHead(BaseModule):
             x_src, x_tgt = inputs[self.feat]
         except KeyError:
             print(f"Can't find input '{self.feat}' for GPA module.")
-        x_src = GradDampening.apply(x_src, self.lambd).flatten(1)
-        x_tgt = GradDampening.apply(x_tgt, self.lambd).flatten(1)
+
+        lambd = self.lambd
+        if self.schedule is not None:
+            if self.iter % self.schedule[0] == self.schedule[1]:
+                self.lambd = 0
+        self.iter += 1
+
+        x_src = GradDampening.apply(x_src, lambd).flatten(1)
+        x_tgt = GradDampening.apply(x_tgt, lambd).flatten(1)
 
         # TODO is this part correct?
         # apply layer
@@ -72,7 +81,10 @@ class GPAHead(BaseModule):
         # get gpa losses
         loss_intra, loss_inter = self._compute_loss(x_src, x_tgt, inputs)
 
-        return {f'loss_{self.feat}_gpa{self.tag}_intra': loss_intra, f'loss_{self.feat}_gpa{self.tag}_inter': loss_inter}
+        return {
+            f'loss_{self.feat}_gpa{self.tag}_intra': loss_intra,
+            f'loss_{self.feat}_gpa{self.tag}_inter': loss_inter
+        }
 
     def _compute_loss(self, x_src, x_tgt, inputs):
         self.batch_size = inputs['img'][0].size(0)
