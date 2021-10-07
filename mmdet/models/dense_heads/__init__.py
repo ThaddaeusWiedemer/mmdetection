@@ -26,6 +26,7 @@ from .reppoints_head import RepPointsHead
 from .retina_head import RetinaHead
 from .retina_sepbn_head import RetinaSepBNHead
 from .rpn_head import RPNHead
+from .rpn_head_adaptive import RPNHeadAdaptive
 from .sabl_retina_head import SABLRetinaHead
 from .ssd_head import SSDHead
 from .vfnet_head import VFNetHead
@@ -34,14 +35,10 @@ from .yolo_head import YOLOV3Head
 from .yolof_head import YOLOFHead
 
 __all__ = [
-    'AnchorFreeHead', 'AnchorHead', 'GuidedAnchorHead', 'FeatureAdaption',
-    'RPNHead', 'GARPNHead', 'RetinaHead', 'RetinaSepBNHead', 'GARetinaHead',
-    'SSDHead', 'FCOSHead', 'RepPointsHead', 'FoveaHead',
-    'FreeAnchorRetinaHead', 'ATSSHead', 'FSAFHead', 'NASFCOSHead',
-    'PISARetinaHead', 'PISASSDHead', 'GFLHead', 'CornerHead', 'YOLACTHead',
-    'YOLACTSegmHead', 'YOLACTProtonet', 'YOLOV3Head', 'PAAHead',
-    'SABLRetinaHead', 'CentripetalHead', 'VFNetHead', 'StageCascadeRPNHead',
-    'CascadeRPNHead', 'EmbeddingRPNHead', 'LDHead', 'CascadeRPNHead',
-    'AutoAssignHead', 'DETRHead', 'YOLOFHead', 'DeformableDETRHead',
-    'CenterNetHead'
+    'AnchorFreeHead', 'AnchorHead', 'GuidedAnchorHead', 'FeatureAdaption', 'RPNHead', 'RPNHeadAdaptive', 'GARPNHead',
+    'RetinaHead', 'RetinaSepBNHead', 'GARetinaHead', 'SSDHead', 'FCOSHead', 'RepPointsHead', 'FoveaHead',
+    'FreeAnchorRetinaHead', 'ATSSHead', 'FSAFHead', 'NASFCOSHead', 'PISARetinaHead', 'PISASSDHead', 'GFLHead',
+    'CornerHead', 'YOLACTHead', 'YOLACTSegmHead', 'YOLACTProtonet', 'YOLOV3Head', 'PAAHead', 'SABLRetinaHead',
+    'CentripetalHead', 'VFNetHead', 'StageCascadeRPNHead', 'CascadeRPNHead', 'EmbeddingRPNHead', 'LDHead',
+    'CascadeRPNHead', 'AutoAssignHead', 'DETRHead', 'YOLOFHead', 'DeformableDETRHead', 'CenterNetHead'
 ]

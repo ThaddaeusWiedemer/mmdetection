@@ -65,8 +65,13 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
             # TODO get backbone stages and neck output shape
             feat_shapes = dict()
             # feat_shapes.update([(f'backbone_{i}', [ch] for i, ch in enumerate([neck['in_channels']]))])
+            neck_in = neck['in_channels']
             neck_out = neck['out_channels']
             feat_shapes.update({
+                'feat_backbone_0': [neck_in[0], 200, 200],
+                'feat_backbone_1': [neck_in[1], 100, 100],
+                'feat_backbone_2': [neck_in[2], 50, 50],
+                'feat_backbone_3': [neck_in[3], 25, 25],
                 'feat_neck_0': [neck_out, 200, 200],
                 'feat_neck_1': [neck_out, 100, 100],
                 'feat_neck_2': [neck_out, 50, 50],
@@ -84,6 +89,7 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
 
             # define all domain adaptation modules
             self.da_heads = nn.ModuleDict()  # use ModuleDict instead of dict to register all layers to the model
+            # self.da_feats = []
             for module in self.da_cfg:
                 if module is None:
                     continue
@@ -116,10 +122,10 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
 
     def extract_feat(self, img):
         """Directly extract features from the backbone+neck."""
-        x = self.backbone(img)
+        feats_bb = self.backbone(img)
         if self.with_neck:
-            x = self.neck(x)
-        return x
+            x = self.neck(feats_bb)
+        return x, feats_bb
 
     def forward_dummy(self, img):
         """Used for computing network flops.
@@ -128,7 +134,7 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
         """
         outs = ()
         # backbone
-        x = self.extract_feat(img)
+        x, _ = self.extract_feat(img)
         # rpn
         if self.with_rpn:
             rpn_outs = self.rpn_head(x)
@@ -204,8 +210,11 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
 
         # extract features in both domains
         # TODO get backbone features before neck?
-        x_src = self.extract_feat(img)
-        x_tgt = self.extract_feat(img_tgt)
+        x_src, bb_src = self.extract_feat(img)
+        x_tgt, bb_tgt = self.extract_feat(img_tgt)
+        for i, (_bb_src, _bb_tgt) in enumerate(zip(bb_src, bb_tgt)):
+            print(f'features in backbone {i}: {_bb_src.size()}')
+            feats.update({f'feat_backbone_{i}': (_bb_src, _bb_tgt)})
         for i, (_x_src, _x_tgt) in enumerate(zip(x_src, x_tgt)):
             # print(f'features in neck {i}: {_x_src.size()}')
             feats.update({f'feat_neck_{i}': (_x_src, _x_tgt)})
@@ -363,7 +372,7 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
     async def async_simple_test(self, img, img_meta, proposals=None, rescale=False):
         """Async test without augmentation."""
         assert self.with_bbox, 'Bbox head must be implemented.'
-        x = self.extract_feat(img)
+        x, _ = self.extract_feat(img)
 
         if proposals is None:
             proposal_list = await self.rpn_head.async_simple_test_rpn(x, img_meta)
@@ -376,7 +385,7 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
         """Test without augmentation."""
 
         assert self.with_bbox, 'Bbox head must be implemented.'
-        x = self.extract_feat(img)
+        x, _ = self.extract_feat(img)
         if proposals is None:
             proposal_list = self.rpn_head.simple_test_rpn(x, img_metas)
         else:
@@ -390,7 +399,7 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
         If rescale is False, then returned bboxes and masks will fit the scale
         of imgs[0].
         """
-        x = self.extract_feats(imgs)
+        x, _ = self.extract_feats(imgs)
         proposal_list = self.rpn_head.aug_test_rpn(x, img_metas)
         return self.roi_head.aug_test(x, proposal_list, img_metas, rescale=rescale)
 
@@ -398,6 +407,6 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
 
         img_shape = torch._shape_as_tensor(img)[2:]
         img_metas[0]['img_shape_for_onnx'] = img_shape
-        x = self.extract_feat(img)
+        x, _ = self.extract_feat(img)
         proposals = self.rpn_head.onnx_export(x, img_metas)
         return self.roi_head.onnx_export(x, proposals, img_metas)

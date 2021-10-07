@@ -167,7 +167,7 @@ class AdversarialHead(BaseModule):
         self.lambd *= self.lambd_weight
 
         if self.schedule is not None:
-            if self.iter % self.schedule[0] == self.schedule[1]:
+            if self.iter % self.schedule[0] in self.schedule[1]:
                 self.lambd = 0
 
         # apply gradient reverse layer and domain classifier
