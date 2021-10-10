@@ -213,7 +213,7 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
         x_src, bb_src = self.extract_feat(img)
         x_tgt, bb_tgt = self.extract_feat(img_tgt)
         for i, (_bb_src, _bb_tgt) in enumerate(zip(bb_src, bb_tgt)):
-            print(f'features in backbone {i}: {_bb_src.size()}')
+            # print(f'features in backbone {i}: {_bb_src.size()}')
             feats.update({f'feat_backbone_{i}': (_bb_src, _bb_tgt)})
         for i, (_x_src, _x_tgt) in enumerate(zip(x_src, x_tgt)):
             # print(f'features in neck {i}: {_x_src.size()}')

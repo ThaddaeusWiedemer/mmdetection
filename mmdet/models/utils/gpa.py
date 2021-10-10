@@ -26,6 +26,8 @@ class GPAHead(BaseModule):
         self.distance = cfg.get('distance', 'mean_squared')  # distance function for contrastive loss
         assert self.distance in distances, f'distance for GPA must be one of {distances}, but got {self.distance}'
         self.mode = cfg.get('mode', 'prediction')  # what information to use to build prototypes
+        modes = ['prediction', 'ground_truth', 'gt_bbox', 'gt_bbox_all']
+        assert self.mode in modes, f'mode for GPA must be one of {modes}, but got {self.mode}'
         self.gt_iou_thrs = cfg.get('gt_iou_thrs', (.75, .25))  # IoU thresholds for ground-truth-based prototypes
         self.thr_mode = cfg.get('thr_mode', 'cut_off')  # how to treat thresholding to generate weights
         self.gt_use_cls = cfg.get('gt_use_cls', False)  # whether GPA with gt should use class prediction
@@ -112,15 +114,35 @@ class GPAHead(BaseModule):
         if self.mode == 'prediction':
             ptt_src = self._build_ptt_cls_pred(x_src, cls_src, rois_src)
             ptt_tgt = self._build_ptt_cls_pred(x_tgt, cls_tgt, rois_tgt)
+            loss_intra, loss_inter = self._loss_from_ptts(ptt_src, ptt_tgt)
 
         elif self.mode == 'ground_truth':
             ptt_src = self._build_ptt_cls_gt(x_src, cls_src, gt_src, rois_src, self.gt_iou_thrs)
             ptt_tgt = self._build_ptt_cls_gt(x_tgt, cls_tgt, gt_tgt, rois_tgt, self.gt_iou_thrs, is_tgt=True)
+            loss_intra, loss_inter = self._loss_from_ptts(ptt_src, ptt_tgt)
 
         elif self.mode == 'gt_bbox':
             ptt_src = self._build_ptt_bbox_gt(x_src, gt_src, rois_src, self.gt_bbox_dim, self.gt_iou_thrs)
             ptt_tgt = self._build_ptt_bbox_gt(x_tgt, gt_tgt, rois_tgt, self.gt_bbox_dim, self.gt_iou_thrs)
+            loss_intra, loss_inter = self._loss_from_ptts(ptt_src, ptt_tgt)
 
+        elif self.mode == 'gt_bbox_all':
+            loss_intra = 0
+            loss_inter = 0
+
+            for dim in ['x', 'y', 'w', 'h']:
+                ptt_src = self._build_ptt_bbox_gt(x_src, gt_src, rois_src, dim, self.gt_iou_thrs)
+                ptt_tgt = self._build_ptt_bbox_gt(x_tgt, gt_tgt, rois_tgt, dim, self.gt_iou_thrs)
+                _loss_intra, _loss_inter = self._loss_from_ptts(ptt_src, ptt_tgt)
+                loss_intra += _loss_intra
+                loss_inter += _loss_inter
+
+            loss_intra /= 4
+            loss_inter /= 4
+
+        return loss_intra, loss_inter
+
+    def _loss_from_ptts(self, ptt_src, ptt_tgt):
         # get the intra-category and inter-category adaptation loss
         loss_intra = 0
         loss_inter = 0
