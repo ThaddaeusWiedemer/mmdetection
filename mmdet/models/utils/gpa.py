@@ -127,18 +127,26 @@ class GPAHead(BaseModule):
             loss_intra, loss_inter = self._loss_from_ptts(ptt_src, ptt_tgt)
 
         elif self.mode == 'gt_bbox_all':
-            loss_intra = 0
-            loss_inter = 0
+            loss_intra = []
+            loss_inter = []
 
             for dim in ['x', 'y', 'w', 'h']:
+                # print('---source---')
                 ptt_src = self._build_ptt_bbox_gt(x_src, gt_src, rois_src, dim, self.gt_iou_thrs)
+                # print('---target---')
                 ptt_tgt = self._build_ptt_bbox_gt(x_tgt, gt_tgt, rois_tgt, dim, self.gt_iou_thrs)
-                _loss_intra, _loss_inter = self._loss_from_ptts(ptt_src, ptt_tgt)
-                loss_intra += _loss_intra
-                loss_inter += _loss_inter
 
-            loss_intra /= 4
-            loss_inter /= 4
+                # skip dimensions with insufficient prototypes
+                if ptt_src is None or ptt_tgt is None:
+                    print(f'skip dim {dim}')
+                    continue
+
+                _loss_intra, _loss_inter = self._loss_from_ptts(ptt_src, ptt_tgt)
+                loss_intra.append(_loss_intra)
+                loss_inter.append(_loss_inter)
+
+            loss_intra = torch.mean(torch.stack(loss_intra)) if loss_intra else torch.zeros(1).cuda()
+            loss_inter = torch.mean(torch.stack(loss_inter)) if loss_inter else torch.zeros(1).cuda()
 
         return loss_intra, loss_inter
 
@@ -329,6 +337,7 @@ class GPAHead(BaseModule):
             # and collect corresponding features
             feat_pos = []
             feat_neg = []
+            # print(f'{rois.size(1)} RoIs for dim {dim}')
             for j in range(rois.size(1)):
                 roi = rois[i, j, :]
                 if max_iou_idx[j] == -1:
@@ -356,8 +365,10 @@ class GPAHead(BaseModule):
 
                 if delta >= 0:
                     feat_pos.append(x[i, j, :])
+                    # print(f'positive delta for dim {dim}')
                 else:
                     feat_neg.append(x[i, j, :])
+                    # print(f'negative delta for dim {dim}')
 
             # build per-image prototypes. be careful since either list might be empty
             if feat_pos:
@@ -365,9 +376,13 @@ class GPAHead(BaseModule):
             if feat_neg:
                 ptts_neg.append(torch.stack(feat_neg, dim=0).mean(dim=0))
 
-        # TODO with lots of bad luck, it could still happen that either list is empty. How to treat that case?
-        ptt_pos = torch.stack(ptts_pos, dim=0).mean(dim=0)
-        ptt_neg = torch.stack(ptts_neg, dim=0).mean(dim=0)
+        # it is possible that for small datasets (e.g. only one image) a bounding box touching one edge results in only
+        # positive/negative offsets along one dimension. In this case, we can't generate pos/neg prototypes
+        ptt_pos = torch.stack(ptts_pos, dim=0).mean(dim=0) if ptts_pos else None
+        ptt_neg = torch.stack(ptts_neg, dim=0).mean(dim=0) if ptts_neg else None
+
+        if ptt_pos is None or ptt_neg is None:
+            return None
 
         return torch.stack([ptt_pos, ptt_neg], dim=0)
 

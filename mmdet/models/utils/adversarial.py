@@ -277,7 +277,7 @@ class RandomCrop(BaseModule):
                 run += 1
                 _x = random.randint(0, x.size(2) - w)
                 _y = random.randint(0, x.size(3) - h)
-                # for any ground-truth: |gx - cx| <= d && |gy - cy| <= d
+                # for any ground-truth: |gx - cx| <= d * w && |gy - cy| <= d * w
                 # where gx, gy, cx, cy are the coordinates of ground-truth and crop center points and d is distance
                 if torch.logical_and(torch.le(torch.abs(gts_x[i] - (_x + w / 2)), self.thrs[1] * w),
                                      torch.le(torch.abs(gts_y[i] - (_y + h / 2)), self.thrs[1] * h)).any():
@@ -289,7 +289,7 @@ class RandomCrop(BaseModule):
                 run += 1
                 _x = random.randint(0, x.size(2) - w)
                 _y = random.randint(0, x.size(3) - h)
-                # for no ground-truth: |gx - cx| <= d && |gy - cy| <= d
+                # for no ground-truth: |gx - cx| <= d * w && |gy - cy| <= d * w
                 if torch.logical_not(
                         torch.logical_and(torch.le(torch.abs(gts_x[i] - (_x + w / 2)), self.thrs[0] * w),
                                           torch.le(torch.abs(gts_y[i] - (_y + h / 2)), self.thrs[0] * h))).all():

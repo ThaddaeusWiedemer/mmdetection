@@ -57,6 +57,7 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
             self.da_cfg = self.train_cfg.get('da', None)
             self.with_da = self.da_cfg is not None
             self.train_source = self.train_cfg.get('train_source', False)
+            self.unsupervised = self.train_cfg.get('unsupervised', False)
 
             self.first_iter = True
             self.iter = 0
@@ -89,7 +90,7 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
 
             # define all domain adaptation modules
             self.da_heads = nn.ModuleDict()  # use ModuleDict instead of dict to register all layers to the model
-            # self.da_feats = []
+            self.da_feats = []
             for module in self.da_cfg:
                 if module is None:
                     continue
@@ -236,9 +237,10 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
                                                                         proposal_cfg=proposal_cfg)
             # save everything for domain adaptation
             feats.update({'proposals': (proposals_src, proposals_tgt)})
-            if self.train_source:
+            if self.train_source or self.unsupervised:
                 losses.update([(f'{k}_src', v) for k, v in rpn_losses_src.items()])
-            losses.update([(f'{k}_tgt', v) for k, v in rpn_losses_tgt.items()])
+            if not self.unsupervised:
+                losses.update([(f'{k}_tgt', v) for k, v in rpn_losses_tgt.items()])
         else:
             raise NotImplementedError('Two stage domain-adaptive detector only works with RPN for now')
             proposal_list = proposals
@@ -252,9 +254,10 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
         # save everything for domain adaptation
         for key in bbox_results_src.keys():
             feats.update({key: (bbox_results_src[key], bbox_results_tgt[key])})
-        if self.train_source:
+        if self.train_source or self.unsupervised:
             losses.update([(f'{k}_src', v) for k, v in roi_losses_src.items()])
-        losses.update([(f'{k}_tgt', v) for k, v in roi_losses_tgt.items()])
+        if not self.unsupervised:
+            losses.update([(f'{k}_tgt', v) for k, v in roi_losses_tgt.items()])
 
         if self.with_da:
             # do domain adaptation
