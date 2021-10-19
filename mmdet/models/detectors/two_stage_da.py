@@ -315,7 +315,7 @@ class TwoStageDetectorDA(BaseDetectorAdaptive):
                 # ignore if weight = 1.0
                 if weight == 1.0:
                     break
-                # update all losses that match the 'location_type_loss' substring
+                # update all losses that match the 'location_type_tag_loss' substring
                 _losses = [(key, value * weight) for key, value in losses.items()
                            if f'{feat}_{name}{tag}_{loss}' in key.lower()]
                 losses.update(_losses)
