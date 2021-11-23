@@ -69,7 +69,6 @@ class GPAHead(BaseModule):
         x_src = GradDampening.apply(x_src, lambd).flatten(1)
         x_tgt = GradDampening.apply(x_tgt, lambd).flatten(1)
 
-        # TODO is this part correct?
         # apply layer
         if isinstance(self.layer, nn.Linear):
             x_src = self.layer(x_src)
